@@ -1,0 +1,76 @@
+@import 'tailwindcss';
+@import '@openai/apps-sdk-ui/css';
+@source '../node_modules/@openai/apps-sdk-ui';
+
+.refine-thinking {
+  color: var(--gray-400);
+  background-image: linear-gradient(100deg, var(--gray-400) 30%, var(--gray-200) 50%, var(--gray-400) 70%);
+  background-size: 250% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: refine-thinking-sweep 3s linear infinite;
+}
+
+@keyframes refine-thinking-sweep {
+  from { background-position: 150% 0; }
+  to { background-position: -100% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .refine-thinking {
+    animation: none;
+    background: none;
+    -webkit-text-fill-color: currentColor;
+  }
+}
+
+.enhance-button {
+  --button-background-color: #0285ff;
+  --button-background-color-hover: #0076e5;
+  --button-background-color-active: #0069cc;
+  --button-text-color: #fff;
+  --button-text-color-hover: #fff;
+  --button-ring-color: #0285ff;
+}
+
+.hero-word {
+  display: inline-block;
+  perspective: 900px;
+  vertical-align: bottom;
+  padding-block: 0.08em;
+  margin-block: -0.08em;
+}
+
+.hero-word-rotor {
+  display: inline-grid;
+  transform-style: preserve-3d;
+  animation: hero-word-rotate 14s linear infinite;
+}
+
+.hero-word-rotor > span {
+  grid-area: 1 / 1;
+  text-align: center;
+  backface-visibility: hidden;
+}
+
+.hero-word-space {
+  transform: rotateX(0deg);
+}
+
+.hero-word-file {
+  transform: rotateX(180deg);
+}
+
+@keyframes hero-word-rotate {
+  from { transform: rotateX(0deg); }
+  to { transform: rotateX(-360deg); }
+}
+
+@theme {
+  --animate-writing-caret: writing-caret 1s step-end infinite;
+  @keyframes writing-caret {
+    0%, 49% { opacity: 1; }
+    50%, 100% { opacity: 0; }
+  }
+}

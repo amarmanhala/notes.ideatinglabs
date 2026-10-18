@@ -1,0 +1,98 @@
+.writing-editor {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.writing-editor::-webkit-scrollbar {
+  display: none;
+}
+.writing-editor p {
+  position: relative;
+}
+.writing-task-checkbox {
+  position: absolute;
+  left: -28px;
+  top: calc((1lh - 20px) / 2);
+  display: flex;
+  align-items: center;
+  height: 20px;
+  width: 20px;
+  user-select: none;
+  -webkit-text-fill-color: initial;
+}
+.dictation-preview {
+  color: var(--color-text-secondary, #737373);
+  white-space: pre-wrap;
+  -webkit-text-fill-color: currentColor;
+}
+.speech-bars {
+  display: flex;
+  height: 26px;
+  width: 30px;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  color: #0285ff;
+}
+.speech-bars > span {
+  display: block;
+  width: 3px;
+  height: var(--bar-height, 5px);
+  border-radius: 2px;
+  background: currentColor;
+  transition: height 90ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .speech-bars > span { height: 10px !important; transition: none; }
+  .speech-bars > span:nth-child(2), .speech-bars > span:nth-child(4) { height: 17px !important; }
+  .speech-bars > span:nth-child(3) { height: 23px !important; }
+}
+.writing-task-timer {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  margin-left: 0.5em;
+  white-space: nowrap;
+  user-select: none;
+  -webkit-text-fill-color: currentColor;
+  color: inherit;
+  font: inherit;
+}
+.writing-task-timer .task-timer-button,
+.writing-task-timer .task-timer-reset {
+  height: auto;
+  min-height: 0;
+  padding: 0 0.15em;
+  font: inherit;
+  color: inherit;
+  line-height: inherit;
+  vertical-align: baseline;
+}
+.writing-task-timer svg {
+  width: 0.7em;
+  height: 0.7em;
+}
+.writing-task-timer {
+  line-height: 1;
+}
+/* Tailwind's image reset otherwise makes ProseMirror's zero-width caret
+   separator a block, adding a blank line after an inline timer. */
+.writing-editor img.ProseMirror-separator {
+  display: inline;
+  width: 0;
+  height: 0;
+  margin: 0;
+}
+
+.writing-task-timer .task-timer-button svg {
+  width: 1em;
+  height: 1em;
+}
+
+.writing-task-timer .task-timer-button {
+  width: 1em;
+  height: 1em;
+  padding: 0;
+}
+.writing-task-timer .task-timer-countdown {
+  margin-inline: 0.15em;
+}
