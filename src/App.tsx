@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { Navigate, Route, Routes, useParams } from 'react-router'
+import { Navigate, Route, Routes, useParams, useLocation } from 'react-router'
 import { SpeechControl, type SpeechControlHandle } from './SpeechControl'
 import { RichWritingEditor } from './RichWritingEditor'
 import { HomePage } from './HomePage'
@@ -8,7 +8,12 @@ import { requestRefinement } from './requestRefinement'
 import { DevApiActivity } from './DevApiActivity'
 import { SyncConflictNotice } from './SyncConflictNotice'
 import { paragraphResources, refinementMetadata, type RefinedParagraph, type RefinementEdit } from './refinementState'
+import { AuthCallback, RequireApproved, SetPassword } from './AuthPages'
+import { useAuth } from './authContext'
+import { accountStorage } from './accountStorage'
 import { AccountMenu } from './AccountMenu'
+import { FeedbackCard } from './FeedbackCard'
+import { WelcomeOnboarding } from './WelcomeOnboarding'
 import { DownloadNote } from './DownloadNote'
 import { AskAIPanel } from './AskAIPanel'
 import { ResizableSidebar } from './ResizableSidebar'
@@ -32,9 +37,9 @@ const NO_FORMATS: TextFormat[] = []
 function dayKey(date = new Date()) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 }
-function loadHistory(): { history: History; error: boolean } {
+function loadHistory(storage: Storage): { history: History; error: boolean } {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
+    const raw = storage.getItem(STORAGE_KEY)
     if (!raw) return { history: {}, error: false }
     return { history: parseHistory(raw), error: false }
   } catch { return { history: {}, error: true } }
@@ -44,12 +49,15 @@ function formatDay(key: string, options: Intl.DateTimeFormatOptions) {
 }
 
 function WritingPage() {
+  const { session } = useAuth()
+  const userId = session!.user.id
+  const storage = useMemo(() => accountStorage(localStorage, userId), [userId])
   const { date } = useParams()
   const today = dayKey()
   const selectedDay = date || today
   const editor = useRef<WritingEditorHandle>(null)
   const speech = useRef<SpeechControlHandle>(null)
-  const [initial] = useState(loadHistory)
+  const [initial] = useState(() => loadHistory(storage))
   const [history, setHistory] = useState(initial.history)
   const historyRef = useRef(history)
   const refinement = useMemo(() => new EnterRefinement(requestRefinement, selectedDay), [selectedDay])
@@ -63,7 +71,7 @@ function WritingPage() {
   const searchInput = useRef<HTMLInputElement>(null)
   const [searchShortcut] = useState(() => /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘K' : 'Ctrl+K')
   const [matchIndex, setMatchIndex] = useState(0)
-  const cloud = useCloudNotes(initial.history, !initial.error, setHistory)
+  const cloud = useCloudNotes(initial.history, !initial.error, setHistory, storage, userId)
   const entry = history[selectedDay]
   const text = entry?.text || ''
   const matches = useMemo(() => findTextMatches(text, searchQuery), [text, searchQuery])
@@ -88,7 +96,7 @@ function WritingPage() {
     setHistory(next)
     // Save each change immediately so closing the page cannot lose a pending debounce.
     if (initial.error) return
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); setSaveFailed(false) }
+    try { storage.setItem(STORAGE_KEY, JSON.stringify(next)); setSaveFailed(false) }
     catch { setSaveFailed(true); return }
     cloud.changed(next, selectedDay)
   }
@@ -180,7 +188,9 @@ function WritingPage() {
           {showTimes && <SessionTimestamps key="timestamps" editor={editor} sessions={entry?.sessions ?? NO_SESSIONS} text={text} day={selectedDay} taskGutter={!!entry?.tasks?.length} />}
         </Animate>
         <div className="relative h-full min-w-0 flex-1">
+        <WelcomeOnboarding userId={userId} profile={session!.user.user_metadata} storage={storage} onFinish={() => editor.current?.focus({ preventScroll: true })}>
         <RichWritingEditor key={selectedDay} ref={editor} text={text} formats={entry?.formats ?? NO_FORMATS} hideCaret={!!caret} searchQuery={searchQuery} matches={matches} activeMatch={activeMatch} tasks={entry?.tasks} onChange={(value, formats, editStart, edits, tasks) => write(value, formats, editStart, undefined, edits, tasks)} onDictationInvalidated={() => speech.current?.cancel(false)} onParagraphComplete={paragraph => refinement.complete(paragraph)} refiningParagraphs={refining.pending} />
+        </WelcomeOnboarding>
         {caret && <span aria-hidden="true" className="pointer-events-none absolute w-0.5 bg-[var(--blue-400)] animate-writing-caret" style={{ left: caret.left, top: caret.top, height: caret.height }} />}
         </div>
         </div>
@@ -194,6 +204,7 @@ function WritingPage() {
         <span>So far, you’ve written {wordCount} {wordCount === 1 ? 'word' : 'words'}.</span>
         <span role="status">{saveFailed ? 'Unable to save' : cloud.status === 'loading' ? 'Connecting…' : cloud.status === 'saving' ? 'Saving to cloud…' : cloud.status === 'saved' ? (entry ? 'Saved to cloud' : 'Ready when you are') : cloud.status === 'conflict' ? 'Local draft · conflict' : cloud.status === 'offline' ? 'Saved locally · offline' : 'Saved locally · cloud unavailable'}</span>
         {import.meta.env.DEV && <DevApiActivity />}
+        <FeedbackCard userId={userId} />
       </footer>
       </div>
       <AnimateLayout as="div" dimension="width" itemAnchor="end" className="h-full" transitionClassName="h-full" hideOverflow initial={{ opacity: 0, x: 12 }} enter={{ opacity: 1, x: 0, duration: 200, delay: 40 }} exit={{ opacity: 0, x: 12, duration: 140 }} layoutEnter={{ duration: 240 }} layoutExit={{ duration: 200 }} layoutMove={{ duration: 240 }}>
@@ -204,5 +215,11 @@ function WritingPage() {
 }
 
 export default function App() {
-  return <Routes><Route path="/" element={<HomePage />} /><Route path="/today" element={<WritingPage />} /><Route path="/day/:date" element={<WritingPage />} /><Route path="*" element={<Navigate to="/today" replace />} /></Routes>
+  const location = useLocation()
+  const { session } = useAuth()
+  const invitation = new URLSearchParams(location.hash.slice(1))
+  // Dashboard invitation emails can return to the Site URL rather than the callback.
+  if (location.pathname !== '/auth/callback' && (invitation.has('access_token') || new URLSearchParams(location.search).has('token_hash'))) return <Navigate to={{ pathname: '/auth/callback', search: location.search, hash: location.hash }} replace />
+  const writing = <RequireApproved><WritingPage key={session?.user.id} /></RequireApproved>
+  return <Routes><Route path="/" element={<HomePage />} /><Route path="/today" element={writing} /><Route path="/day/:date" element={writing} /><Route path="/auth/callback" element={<AuthCallback />} /><Route path="/auth/set-password" element={<SetPassword />} /><Route path="*" element={<Navigate to="/today" replace />} /></Routes>
 }

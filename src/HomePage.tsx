@@ -1,26 +1,32 @@
 import { useState } from 'react'
 import { Link } from 'react-router'
 import { Button, ButtonLink } from '@openai/apps-sdk-ui/components/Button'
-import { AuthDialog } from './AuthDialog'
+import { AuthDialog, type AuthMode } from './AuthDialog'
+import { useAuth } from './authContext'
+import { AccountMenu } from './AccountMenu'
 
 export function HomePage() {
-  const [authOpen, setAuthOpen] = useState(false)
+  const [authMode, setAuthMode] = useState<AuthMode | null>(null)
+  const { status, session } = useAuth()
 
   return (
     <div data-theme="light" className="flex h-dvh flex-col overflow-hidden bg-surface text-default">
       <header className="flex shrink-0 items-center justify-between gap-4 px-5 py-4 sm:px-10">
         <Link to="/" aria-label="Notes home" className="heading-lg rounded-sm focus-visible:outline-2 focus-visible:outline-offset-4">Notes</Link>
         <nav aria-label="Account" className="flex items-center gap-2 sm:gap-3">
-          <Button color="secondary" variant="ghost" size="lg" pill={false} onClick={() => setAuthOpen(true)}>Log in</Button>
-          <Button color="primary" size="lg" pill={false} onClick={() => setAuthOpen(true)}>Sign up</Button>
+          <>
+          {session ? <AccountMenu /> : <><Button color="secondary" variant="ghost" size="lg" pill={false} onClick={() => setAuthMode('login')}>Log in</Button>
+          <Button color="primary" size="lg" pill={false} onClick={() => setAuthMode('signup')}>Sign up</Button></>}
+          </>
         </nav>
       </header>
 
       <main className="flex min-h-0 flex-1 items-center justify-center px-6 text-center">
         <section aria-labelledby="hero-title">
+          <img src="/homepage-pumpkin.png" alt="" width={500} height={500} draggable={false} className="mx-auto mb-5 size-[clamp(4rem,18dvh,9rem)] select-none object-contain" />
           <h1 id="hero-title" className="heading-5xl text-[clamp(1.25rem,min(9vw,10dvh),4.5rem)] leading-none">One file.<br />All your thoughts.<br />Refined with AI.</h1>
           <div className="mt-8">
-            <ButtonLink to="/today" color="primary" size="3xl" pill={false}>Let’s start</ButtonLink>
+            <>{status === 'approved' ? <ButtonLink to="/today" color="primary" size="3xl" pill={false}>Open Notes</ButtonLink> : <Button color="primary" size="3xl" pill={false} onClick={() => setAuthMode('login')}>Let’s start</Button>}</>
           </div>
         </section>
       </main>
@@ -28,7 +34,7 @@ export function HomePage() {
       <footer className="shrink-0 px-5 py-4 text-center text-sm text-secondary">
         Developed by Amar
       </footer>
-      {authOpen && <AuthDialog onClose={() => setAuthOpen(false)} />}
+      {authMode && <AuthDialog initialMode={authMode} onClose={() => setAuthMode(null)} />}
     </div>
   )
 }
@@ -40,7 +46,9 @@ export function HomePage() {
 // import { Checkbox } from '@openai/apps-sdk-ui/components/Checkbox'
 // import { ArrowDown, ArrowRight, ImageWide, Play } from '@openai/apps-sdk-ui/components/Icon'
 // import { SegmentedControl } from '@openai/apps-sdk-ui/components/SegmentedControl'
-// import { AuthDialog } from './AuthDialog'
+// import { AuthDialog, type AuthMode } from './AuthDialog'
+// import { useAuth } from './authContext'
+// import { AccountMenu } from './AccountMenu'
 //
 // const chapters = [
 //   { id: 'why-notes', label: 'Why Notes' },

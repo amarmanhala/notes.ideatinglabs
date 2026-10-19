@@ -1,7 +1,7 @@
 import { build } from 'esbuild'
 import { mkdir, copyFile } from 'node:fs/promises'
 import { resolveAndParseConfig } from '@cloudflare/config'
-import { getWorkerBundleDir, writeRootConfig, writeWorkerConfig } from '@cloudflare/build-output-utils'
+import { getWorkerBundleDir, writeRootConfig, writeWorkerConfig, writeAssets } from '@cloudflare/build-output-utils'
 import config from '../cloudflare.config.ts'
 
 const root = process.cwd()
@@ -14,6 +14,7 @@ await build({ entryPoints: ['worker/index.ts'], outfile: '.cloudflare/worker.mjs
 const bundle = getWorkerBundleDir(root)
 await mkdir(bundle, { recursive: true })
 await copyFile('.cloudflare/worker.mjs', `${bundle}/worker.mjs`)
+await writeAssets({ root, sourceDirectory: `${root}/dist` })
 await writeRootConfig(root, { accountId: config.accountId }, context)
 await writeWorkerConfig({ root, config: worker, manifest: { type: 'complete', mainModule: 'worker.mjs', modules: { 'worker.mjs': { type: 'esm' } } } })
 console.log('Built .cloudflare/worker.mjs and Cloudflare prebuilt deployment output')

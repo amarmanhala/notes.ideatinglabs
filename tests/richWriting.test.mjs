@@ -21,10 +21,10 @@ const schema = getSchema(writingExtensions)
 const node = (text,formats=[]) => schema.nodeFromJSON(toRichDocument(text,formats))
 const start = Date.parse('2026-10-14T14:00:00Z')
 const editors=[]
-function createEditor(text='hello world') {
+function createEditor(text='hello world',onRequest=()=>{}) {
   const element=document.createElement('div')
   document.body.append(element)
-  const editor=new Editor({element,extensions:writingExtensions,content:toRichDocument(text),injectCSS:false,editorProps:{handleScrollToSelection:()=>true}})
+  const editor=new Editor({element,extensions:writingExtensions.map(extension=>extension.name==='confirmClearNotes'?extension.configure({onRequest}):extension),content:toRichDocument(text),injectCSS:false,editorProps:{handleScrollToSelection:()=>true}})
   editors.push(editor)
   return editor
 }
@@ -195,4 +195,73 @@ test('timer survives formatting and surrounding insertions, but edits to the tim
  assert.equal(fromRichDocument(editor.state.doc).tasks[0].timer,null)
  assert.equal(editor.view.dom.querySelector('[data-task-timer]'),null)
  shortcut(editor,'z');assert.equal(fromRichDocument(editor.state.doc).tasks[0].timer.durationSeconds,1800)
+})
+
+test('cancelling a full-page deletion preserves text, formatting, tasks and selection without saving',async t=>{
+ let request
+ const editor=createEditor('hello world',next=>{request=next})
+ const text='Keep this thought\nBuy milk'
+ editor.commands.setContent(toRichDocument(text,[{start:0,end:4,marks:['bold']}],[{start:18,end:26,checked:false}]),{emitUpdate:false})
+ editor.commands.selectAll()
+ const before=editor.state.doc.toJSON(),selection=editor.state.selection.toJSON()
+ let saves=0
+ editor.on('update',()=>saves++)
+ t.mock.method(window,'confirm',()=>assert.fail('Browser confirmations must never be used'))
+ editor.commands.deleteSelection();await Promise.resolve()
+ assert.ok(request);assert.equal(saves,0)
+ request.cancel();await Promise.resolve()
+ assert.equal(request,null)
+ assert.deepEqual(editor.state.doc.toJSON(),before)
+ assert.deepEqual(editor.state.selection.toJSON(),selection)
+})
+test('confirming a full deletion saves once and one Undo restores the complete note',async()=>{
+ let request,calls=0
+ const editor=createEditor('Original thought\nSecond thought',next=>{request=next;if(next)calls++})
+ editor.commands.setTextSelection({from:1,to:9});editor.commands.toggleBold()
+ const before=editor.state.doc.toJSON()
+ let saves=0
+ editor.on('update',()=>saves++)
+ editor.commands.selectAll();editor.commands.deleteSelection();await Promise.resolve()
+ assert.equal(saves,0)
+ assert.equal(request.confirm(),true)
+ assert.equal(fromRichDocument(editor.state.doc).text,'');assert.equal(saves,1)
+ editor.commands.undo();assert.deepEqual(editor.state.doc.toJSON(),before)
+ editor.commands.redo();assert.equal(fromRichDocument(editor.state.doc).text,'')
+ assert.equal(calls,1,'Undo and Redo do not open another confirmation')
+})
+test('a full cut is blocked until confirmation and duplicate requests share one dialog',async()=>{
+ let request,calls=0
+ const editor=createEditor('Keep all my notes',next=>{request=next;if(next)calls++})
+ editor.commands.selectAll()
+ editor.view.dispatch(editor.state.tr.deleteSelection().setMeta('uiEvent','cut'))
+ editor.commands.deleteSelection()
+ await Promise.resolve()
+ assert.equal(calls,1);assert.ok(request)
+ assert.equal(fromRichDocument(editor.state.doc).text,'Keep all my notes')
+ request.cancel()
+})
+test('partial deletions, replacement text, and silent document changes do not ask to clear notes',async()=>{
+ const editor=createEditor('First thought\nSecond thought',()=>assert.fail('Unexpected confirmation'))
+ editor.commands.setTextSelection({from:1,to:6});editor.commands.deleteSelection()
+ assert.equal(fromRichDocument(editor.state.doc).text,' thought\nSecond thought')
+ editor.commands.selectAll();editor.commands.insertContent('Replacement thought')
+ assert.equal(fromRichDocument(editor.state.doc).text,'Replacement thought')
+ editor.commands.selectAll();editor.commands.setContent(toRichDocument(''),{emitUpdate:false})
+ assert.equal(fromRichDocument(editor.state.doc).text,'')
+ editor.commands.selectAll();editor.commands.deleteSelection()
+ await Promise.resolve()
+})
+test('newer writing and editor destruction invalidate an old delete confirmation',async()=>{
+ let request
+ const editor=createEditor('Original thought',next=>{request=next})
+ editor.commands.selectAll();editor.commands.deleteSelection();await Promise.resolve()
+ const stale=request
+ editor.commands.setContent(toRichDocument('Newer cloud writing'),{emitUpdate:false})
+ await Promise.resolve()
+ assert.equal(request,null);assert.equal(stale.confirm(),false)
+ assert.equal(fromRichDocument(editor.state.doc).text,'Newer cloud writing')
+ editor.commands.selectAll();editor.commands.deleteSelection();await Promise.resolve()
+ const removed=request
+ editor.destroy()
+ assert.equal(removed.confirm(),false)
 })

@@ -97,11 +97,13 @@ export function reconcile(local: History, bases: SyncBases, cloud: CloudSnapshot
   return { history, bases: nextBases, pending, conflicts }
 }
 
-export function createCloudApi(baseUrl: string, token: string, lifecycle: AbortSignal, requestFetch: typeof fetch = fetch) {
+export function createCloudApi(baseUrl: string, token: string | (() => Promise<string>), lifecycle: AbortSignal, requestFetch: typeof fetch = fetch) {
   async function request(path: string, init?: RequestInit) {
+    const credential = typeof token === 'function' ? await token() : token
+    lifecycle.throwIfAborted()
     const response = await requestFetch(`${baseUrl.replace(/\/$/, '')}${path}`, {
       ...init,
-      headers: { Authorization: `Bearer ${token}`, ...(init?.body ? { 'Content-Type': 'application/json' } : {}) },
+      headers: { Authorization: `Bearer ${credential}`, ...(init?.body ? { 'Content-Type': 'application/json' } : {}) },
       signal: AbortSignal.any([lifecycle, AbortSignal.timeout(12_000)]),
     })
     const result = await response.json()

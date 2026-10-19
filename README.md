@@ -13,7 +13,7 @@ npm run build
 npm run build:worker
 ```
 
-Runtime tests use Miniflare's local sockets and SQLite; a restricted sandbox may need permission to open the test socket. Browser UI testing is intentionally deferred.
+Runtime tests use Miniflare's local sockets and SQLite; a restricted sandbox may need permission to open the test socket. Authentication UI and approval flows are also verified against the local app and Supabase.
 
 The production frontend defaults to `https://notes.ideatinglabs.com`. Local Vite development proxies `/api` to the same live backend. For newly published DNS records, the proxy can resolve this exact hostname through Cloudflare public DNS while keeping HTTPS certificate verification enabled. To target another backend, copy `.env.example` to `.env.local` and set `VITE_API_BASE_URL`. The backend must allow that frontend origin in `ALLOWED_ORIGINS` in `cloudflare.config.ts`. Current allowed development origins are localhost and 127.0.0.1 on ports 5173 and 4173.
 
@@ -28,7 +28,7 @@ The production frontend defaults to `https://notes.ideatinglabs.com`. Local Vite
 - Select text and press Cmd+B for bold or Cmd+I for italic (Ctrl on Windows/Linux). These shortcuts toggle the selected style; no formatting buttons are shown. Validated formatting ranges are saved alongside plain text in local storage and D1. Undo/redo is supported; old plain-text notes remain compatible.
 - React Router serves `/today` and `/day/:date`. Search currently has a native field; search results and time-view navigation are future work.
 
-Local writing is kept under `notes.writing.v1`. Existing browser notes become one initial session and are uploaded automatically when connecting to an empty cloud history. Migration preserves original text and dates.
+Local drafts, revisions and conflict backups use an account-specific `notes.account.<user-id>.` prefix. Earlier anonymous drafts remain untouched in their original keys and are never automatically assigned to an account. Signing out preserves each account’s drafts.
 
 The footer distinguishes Connecting, Saving to cloud, Saved to cloud, and offline/cloud-unavailable local drafts. Network failures retain local drafts and retry every 15 seconds and on reconnection. A single save queue keeps rapid edits in order. Atomic cloud revision checks reject stale writes. Conflicts retain the local draft and show an alert rather than silently replacing cloud writing; resolving competing versions has not yet been added.
 
@@ -52,7 +52,19 @@ Learning goals are corrected like other notes (for example, `Learn rect` becomes
 
 For local development, set `OPENAI_API_KEY` in `.env.local` and keep `VITE_API_BASE_URL` blank. Restart `npm run dev` after changing environment variables if Vite does not reload them automatically. The local `/api/refine` handler runs in the Vite server; the secret is never sent to the browser. The `/api/speech/session` handler also runs locally. Other `/api` calls still proxy to the existing cloud backend.
 
-For production, configure the `OPENAI_API_KEY` secret on the **notes** Worker and deploy the updated Worker with `npm run deploy`. The existing `cf` CLI also accepts a secrets file during deployment. The Worker authenticates with the existing private browser key, allows configured frontend origins, and limits requests to ten per minute per IP at each Cloudflare location. The API integration uses `gpt-5.4-mini` through the Responses API with `store: false`. Paragraphs are sent for refinement only after Enter or completed speech transcription; note text and API keys are not logged by this application. Responses are not cached. A missing key shows a setup message and preserves the note.
+For production, configure the `OPENAI_API_KEY` secret on the **notes** Worker and deploy the updated Worker with `npm run deploy`. The existing `cf` CLI also accepts a secrets file during deployment. The Worker validates the Supabase session and current beta approval, allows configured frontend origins, and limits requests to ten per minute per IP at each Cloudflare location. The API integration uses `gpt-5.4-mini` through the Responses API with `store: false`. Paragraphs are sent for refinement only after Enter or completed speech transcription; note text and API keys are not logged by this application. Responses are not cached. A missing key shows a setup message and preserves the note.
+
+## First-time welcome
+
+The first Notes visit shows “What should we call you?” and an optional **Name** field directly in the writing area, followed by a short inline greeting. No dialog or card is shown. **Skip** keeps the name empty. Closing the welcome also marks it seen, so it is not shown again. The name uses Supabase Auth’s `full_name` metadata, and `notes_welcome_seen` tracks completion across devices; neither field authorizes access. Existing metadata is preserved.
+
+An account-scoped `notes.welcome.v1` browser record marks the welcome seen immediately and queues failed profile saves for reconnect or the next visit. Names and greeting copy are never inserted into note content. The avatar uses the saved name automatically after the profile sync.
+
+## Feedback
+
+The writing-page footer has a **Feedback** button that opens a compact UI-library card. Signed-in approved users can submit up to 2,000 characters. Feedback is stored in the Cloudflare **notes-db** D1 database's `feedback` table with the server-derived account owner ID, message, ID and timestamp. Review submissions in Cloudflare’s D1 console; there is no public feedback read endpoint. Retries reuse the submission ID, and failed submissions keep the draft. The API allows five submissions per user per minute.
+
+Apply `worker/migrations/0002_feedback.sql` before deploying the feedback Worker. The `FEEDBACK_LIMITER` binding uses namespace 1004. Feedback does not send note contents or trigger OpenAI.
 
 ## Inline task timers
 
@@ -68,12 +80,34 @@ Worker: **notes**. Database: **notes-db**. Configuration: `cloudflare.config.ts`
 | --- | --- |
 | `POST /api/speech/session` | Create a short-lived transcription credential |
 | `GET /api/health` | Public Worker/D1 health check |
-| `GET /api/notes` | Load this browser's history and revision numbers |
+| `GET /api/notes` | Load this account’s history and revision numbers |
 | `PUT /api/notes/:day` | Save `{ entry, baseRevision }`, including session metadata |
 
-Private endpoints require `Authorization: Bearer <browser-key>`. The app generates a cryptographically random 256-bit key and stores it under `notes.identity.v1`; D1 stores only its SHA-256 owner identifier. There are no hardcoded frontend credentials or shared public notes. Each browser identity has separate data. Notes are not logged and responses are not cached. Request bodies are limited to 512 KiB.
+Private endpoints require `Authorization: Bearer <Supabase-access-token>`. The server verifies the session with Supabase Auth and checks the email’s current approval. D1 scopes notes to a SHA-256 hash of `supabase:<user-id>`. Previous browser keys cannot authorize requests. Notes and credentials are not logged; responses are not cached. Request bodies are limited to 512 KiB. Application-level end-to-end encryption has not been added.
 
-This is browser-key access, not account sign-in. Another browser/device cannot recover the same notes yet. Clearing the browser key removes access to its cloud notes even though they remain in D1. Keep browser data until account login/recovery or export is added. Notes are stored in D1; application-level end-to-end encryption has not been added.
+## Email and password access
+
+Google sign-in is intentionally unavailable. Supabase’s **notes** project handles email/password accounts, email confirmation, sessions and sign-out.
+
+1. In the [Supabase Table Editor](https://supabase.com/dashboard/project/gcntpdfxhsqecqecukyj/editor), open **beta_access** and insert the user’s lowercase email. New rows default to **approved**. No invitation or access request is needed.
+2. The user chooses **Sign up**, enters that email and a password, and confirms their email. They can then **Log in** with email and password.
+3. Change status to **rejected** or delete the email to block subsequent API requests, including sessions already signed in. Existing pending/rejected rows remain blocked until explicitly approved.
+
+The homepage has no invite link, and the public invite-request API is removed. Users cannot add themselves to the access list. Passwords are handled exclusively by Supabase Auth; adding an email to the access table does not create an Auth account by itself.
+
+The migrations in `supabase/migrations` create the approval table, row security and the before-user-created hook. Users can only read their own status and cannot add or approve accounts. The hook blocks unlisted account creation, including direct Auth API calls. `supabase/config.toml` records callback URLs and hook settings.
+
+Copy `.env.example` to `.env.local`. Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` for the browser. `OPENAI_API_KEY` stays server-only. The running app no longer needs a Supabase secret key because it does not write access-list rows.
+
+Before publishing a frontend, set its public URL in **Supabase Authentication → URL Configuration** (Site URL and `/auth/callback` redirect), update `supabase/config.toml`, and add its origin to the Worker’s `ALLOWED_ORIGINS`. Current callbacks support local ports 5173, 5175 and 4173. Dashboard invitations use the configured Site URL by default.
+
+## Authentication and account-isolation verification
+
+The Worker verifies each session with Supabase Auth, checks email confirmation and the current access-list row, and derives every D1 owner from the verified user ID. Client-supplied owner IDs never select the database owner. The frontend also requires the server-verified account ID to match the account whose local drafts it opens.
+
+The regression suite covers forged credentials, unconfirmed/unlisted accounts, cross-account owner parameters, separate local drafts, sign-out during credential retrieval, and late responses after switching accounts. A live check with two disposable Supabase accounts verified isolated D1 saves/loads, same-user access from another login, tampered-token rejection, approval revocation and signed-out token replay rejection. Test accounts and their D1 notes were removed afterward. Server secrets were checked against the frontend bundle and source configuration.
+
+Supabase's security advisor currently reports **leaked-password protection disabled**. That additional protection is available on Pro and above; see [Supabase password security](https://supabase.com/docs/guides/auth/password-security). Email confirmation remains enabled. Browser sessions and per-user drafts are persisted locally, so shared browser profiles retain cached drafts after sign-out.
 
 ## Cloudflare setup and deployment
 
@@ -85,11 +119,11 @@ npm run deploy
 
 This builds a typed Worker and deploys its prebuilt output using the pinned Cloudflare CLI. The frontend continues to run locally; this command deploys the backend only. For a new database, apply the SQL migration and update the D1 binding before deployment. Logs and traces are enabled; preview URLs are disabled.
 
-The live check in `scripts/check-live.mjs` verifies public HTTPS, D1 round-trip, sessions, authorization, CORS, isolation, revision conflicts, and safe retry using a disposable browser identity. The initial rollout also used a temporary Cloudflare check Worker, which was removed along with its schedule and test records. Existing personal notes are never read or uploaded for testing.
+The live check in `scripts/check-live.mjs` verifies public HTTPS, D1 round-trip, sessions, authorization, CORS, isolation, revision conflicts, and safe retry using two explicitly supplied disposable approved account sessions. The initial rollout also used a temporary Cloudflare check Worker, which was removed along with its schedule and test records. Existing personal notes are never read or uploaded for testing.
 
 ## Next steps
 
-Account sign-in and recovery, revision history/export, working search, Today/Week/Month/Year navigation, then user-controlled AI review and idea development.
+Password recovery, beta feedback, and production frontend URL configuration.
 
 ## Dependency status
 

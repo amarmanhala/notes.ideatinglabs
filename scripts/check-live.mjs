@@ -3,8 +3,12 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import https from 'node:https'
 
 const base = process.env.NOTES_API_URL || 'https://notes.ideatinglabs.com'
-const token = Array.from(crypto.getRandomValues(new Uint8Array(32)), b => b.toString(16).padStart(2, '0')).join('')
-const ownerId = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token))), b => b.toString(16).padStart(2, '0')).join('')
+const token = process.env.NOTES_TEST_ACCESS_TOKEN
+const otherToken = process.env.NOTES_TEST_OTHER_ACCESS_TOKEN
+if (!token || !otherToken) throw new Error('Set NOTES_TEST_ACCESS_TOKEN and NOTES_TEST_OTHER_ACCESS_TOKEN for two disposable approved accounts.')
+const claims = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString())
+if (!claims.sub) throw new Error('The test session must identify a Supabase account.')
+const ownerId = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`supabase:${claims.sub}`))), b => b.toString(16).padStart(2, '0')).join('')
 const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
 const checks = []
 // Optional DNS override for a newly published hostname. TLS still verifies the
@@ -48,6 +52,10 @@ try {
   const cors = await request('Frontend CORS preflight', '/api/notes', { method: 'OPTIONS', headers: { Origin: 'http://127.0.0.1:5173' } }, 204)
   assert.equal(cors.headers.get('Access-Control-Allow-Origin'), 'http://127.0.0.1:5173')
   await request('Unexpected origins rejected', '/api/notes', { headers: { ...headers, Origin: 'https://untrusted.example' } }, 403)
+  for (const candidate of [token, otherToken]) {
+    const existing = await (await request('Disposable account is empty', '/api/notes', {headers:{Authorization:`Bearer ${candidate}`}}, 200)).json()
+    assert.deepEqual(existing.history, {}, 'Refusing to write to an account with existing notes')
+  }
   const now = new Date().toISOString()
   const entry = { text: 'Disposable live verification note', createdAt: now, updatedAt: now, sessions: [{ id: crypto.randomUUID(), startedAt: now, lastEditedAt: now, anchorOffset: 0 }], formats: [{ start: 0, end: 10, marks: ['bold'] }, { start: 11, end: 15, marks: ['italic'] }] }
   const put = (entry, baseRevision) => ({ method: 'PUT', headers, body: JSON.stringify({ entry, baseRevision }) })
@@ -58,8 +66,7 @@ try {
   await request('Reject stale revisions', '/api/notes/2026-10-14', put(edited, 0), 409)
   await request('Save the next revision', '/api/notes/2026-10-14', put(edited, 1), 200)
   await request('Retry a lost response safely', '/api/notes/2026-10-14', put(edited, 1), 200)
-  const otherToken = Array.from(crypto.getRandomValues(new Uint8Array(32)), b => b.toString(16).padStart(2, '0')).join('')
-  const isolated = await (await request('Isolate another browser', '/api/notes', { headers: { Authorization: `Bearer ${otherToken}` } }, 200)).json()
+  const isolated = await (await request('Isolate another account', '/api/notes', { headers: { Authorization: `Bearer ${otherToken}` } }, 200)).json()
   assert.deepEqual(isolated.history, {})
   console.log(JSON.stringify({ ok: true, base, checks }, null, 2))
 } finally {

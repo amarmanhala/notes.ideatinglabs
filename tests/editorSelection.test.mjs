@@ -8,6 +8,8 @@ for(const key of ['window','document','navigator','Node','Element','HTMLElement'
  Object.defineProperty(globalThis,key,{value:['getComputedStyle','requestAnimationFrame','cancelAnimationFrame'].includes(key)?value.bind(dom.window):value,configurable:true,writable:true})
 }
 globalThis.ResizeObserver=class{observe(){} disconnect(){}}
+dom.window.HTMLDialogElement.prototype.showModal=function(){this.open=true}
+dom.window.HTMLDialogElement.prototype.close=function(){this.open=false;this.dispatchEvent(new Event('close'))}
 Object.defineProperty(document,'fonts',{value:{ready:Promise.resolve()},configurable:true})
 Object.defineProperty(document,'hasFocus',{value:()=>true,configurable:true})
 dom.window.HTMLElement.prototype.scrollTo=function({top}){this.scrollTop=top}
@@ -213,4 +215,35 @@ test('inline timer buttons start and pause without entering the countdown into s
  assert.equal(changes.at(-1).tasks[0].checked,false)
  assert.ok(host.querySelector('[data-task-timer]'),'unchecking restores the paused timer')
  assert.equal(changes.at(-1).tasks[0].timer.endsAt,undefined)
+})
+
+test('the library deletion dialog keeps notes on cancel and clears only after its destructive action',async t=>{
+ const changes=[]
+ await mount({text:'My important notes',onChange:text=>changes.push(text)})
+ t.mock.method(window,'confirm',()=>assert.fail('Native browser alerts are not allowed'))
+ const input=host.querySelector('[role="textbox"]')
+ await act(async()=>{input.focus();select(input.querySelector('p'),0,18);input.dispatchEvent(new KeyboardEvent('keydown',{key:'Backspace',bubbles:true,cancelable:true}));await settle()})
+ let dialog=host.querySelector('[role="alertdialog"]')
+ assert.ok(dialog?.open)
+ assert.match(dialog.textContent,/syncs the deletion to your account/)
+ assert.equal(input.textContent,'My important notes');assert.deepEqual(changes,[])
+ await act(async()=>{[...dialog.querySelectorAll('button')].find(b=>b.textContent==='Keep notes').click();await settle()})
+ assert.equal(host.querySelector('[role="alertdialog"]'),null)
+ assert.equal(input.textContent,'My important notes');assert.deepEqual(changes,[])
+ await act(async()=>{select(input.querySelector('p'),0,18);input.dispatchEvent(new KeyboardEvent('keydown',{key:'Backspace',bubbles:true,cancelable:true}));await settle()})
+ dialog=host.querySelector('[role="alertdialog"]')
+ await act(async()=>{[...dialog.querySelectorAll('button')].find(b=>b.textContent==='Delete notes').click();await settle()})
+ assert.deepEqual(changes,[''])
+ assert.equal(host.querySelector('[role="alertdialog"]'),null)
+})
+test('Escape dismisses the library delete dialog without saving a deletion',async()=>{
+ const changes=[]
+ await mount({text:'Keep these notes',onChange:text=>changes.push(text)})
+ const input=host.querySelector('[role="textbox"]')
+ await act(async()=>{select(input.querySelector('p'),0,16);input.dispatchEvent(new KeyboardEvent('keydown',{key:'Delete',bubbles:true,cancelable:true}));await settle()})
+ const dialog=host.querySelector('[role="alertdialog"]')
+ assert.ok(dialog)
+ await act(async()=>{dialog.dispatchEvent(new Event('cancel',{cancelable:true}));await settle()})
+ assert.equal(host.querySelector('[role="alertdialog"]'),null)
+ assert.equal(input.textContent,'Keep these notes');assert.deepEqual(changes,[])
 })

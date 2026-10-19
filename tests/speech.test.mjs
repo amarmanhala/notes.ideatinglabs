@@ -50,7 +50,7 @@ const setup=t=>{
  }
  t.mock.property(globalThis,'RTCPeerConnection',Peer)
  t.mock.property(globalThis,'localStorage',{getItem:()=> 'a'.repeat(64)})
- const speech=new SpeechTranscription({phase:p=>phases.push(p),transcript:text=>transcripts.push(text),levels:()=>{},finish:r=>results.push(r)})
+ const speech=new SpeechTranscription({phase:p=>phases.push(p),transcript:text=>transcripts.push(text),levels:()=>{},finish:r=>results.push(r)},async()=> 'test.token.jwt')
  t.after(()=>speech.cancel())
  return {speech,phases,results,transcripts,tracks,get peer(){return peer},event(e){peer.channel.onmessage({data:JSON.stringify(e)})}}
 }

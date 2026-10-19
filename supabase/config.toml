@@ -1,0 +1,15 @@
+project_id = "notes"
+
+[auth]
+site_url = "http://127.0.0.1:5173"
+additional_redirect_urls = ["http://127.0.0.1:5173/auth/callback", "http://localhost:5173/auth/callback", "http://127.0.0.1:5175/auth/callback", "http://localhost:5175/auth/callback", "http://127.0.0.1:4173/auth/callback", "http://localhost:4173/auth/callback"]
+enable_signup = true
+minimum_password_length = 8
+
+[auth.email]
+enable_signup = true
+enable_confirmations = true
+
+[auth.hook.before_user_created]
+enabled = true
+uri = "pg-functions://postgres/public/beta_signup_gate"

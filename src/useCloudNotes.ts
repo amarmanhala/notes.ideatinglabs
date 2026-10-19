@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import { browserKey, createCloudApi, NotesSync, parseBases, SYNC_KEY, type SyncStatus, type NoteConflict } from './cloudSync'
+import { createCloudApi, NotesSync, parseBases, SYNC_KEY, type SyncStatus, type NoteConflict } from './cloudSync'
+import { getAccessToken } from './authClient'
 import { backupConflict } from './conflictBackups'
 import { STORAGE_KEY, type History } from './writingSessions'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? (import.meta.env.DEV ? '' : 'https://notes.ideatinglabs.com')
-export function useCloudNotes(initial: History, enabled: boolean, onHistory: (history: History) => void) {
+export function useCloudNotes(initial: History, enabled: boolean, onHistory: (history: History) => void, storage: Storage, userId: string) {
   const engine = useRef<NotesSync | null>(null)
   const latest = useRef(initial)
   const [status, setStatus] = useState<SyncStatus>('loading')
@@ -13,19 +14,18 @@ export function useCloudNotes(initial: History, enabled: boolean, onHistory: (hi
     if (!enabled) return
     const lifecycle = new AbortController()
     try {
-      const token = browserKey(localStorage)
       const sync = new NotesSync({
         history: latest.current,
-        bases: parseBases(localStorage.getItem(SYNC_KEY)),
-        api: createCloudApi(API_BASE, token, lifecycle.signal),
+        bases: parseBases(storage.getItem(SYNC_KEY)),
+        api: createCloudApi(API_BASE, () => getAccessToken(userId), lifecycle.signal),
         persist: (history, bases) => {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(history))
-          localStorage.setItem(SYNC_KEY, JSON.stringify(bases))
+          storage.setItem(STORAGE_KEY, JSON.stringify(history))
+          storage.setItem(SYNC_KEY, JSON.stringify(bases))
         },
         onHistory: history => { latest.current = history; onHistory(history) },
         onStatus: setStatus,
         onConflicts: setConflicts,
-        backupConflict: conflict => backupConflict(localStorage, conflict),
+        backupConflict: conflict => backupConflict(storage, conflict),
       })
       engine.current = sync
       const retry = () => { void sync.retry() }
@@ -44,7 +44,7 @@ export function useCloudNotes(initial: History, enabled: boolean, onHistory: (hi
       const timer = window.setTimeout(() => setStatus('error'), 0)
       return () => window.clearTimeout(timer)
     }
-  }, [enabled, onHistory])
+  }, [enabled, onHistory, storage, userId])
   return {
     status,
     conflicts,

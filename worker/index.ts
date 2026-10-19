@@ -1,3 +1,4 @@
+import { accountAccess, approvedOwner, AuthError } from './auth'
 import type { InferEnv } from 'cf/config'
 import type config from '../cloudflare.config'
 import { parseHistory, type Entry } from '../src/writingSessions'
@@ -33,12 +34,7 @@ async function readBody(request: Request): Promise<unknown> {
   try { return JSON.parse(new TextDecoder().decode(data)) }
   catch { throw new HttpError(400, 'Invalid JSON') }
 }
-async function ownerId(request: Request) {
-  const match = /^Bearer ([a-f0-9]{64})$/.exec(request.headers.get('authorization') ?? '')
-  if (!match) throw new HttpError(401, 'A private browser key is required')
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(match[1]))
-  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('')
-}
+
 function validDay(day: string) {
   return /^\d{4}-\d{2}-\d{2}$/.test(day) && new Date(`${day}T12:00:00Z`).toISOString().slice(0, 10) === day
 }
@@ -51,8 +47,24 @@ async function route(request: Request, env: Env): Promise<Response> {
     await env.DB.prepare('SELECT 1').first()
     return json({ ok: true, service: 'notes', storage: 'D1' })
   }
-  if (url.pathname !== '/api/speech/session' && url.pathname !== '/api/refine' && url.pathname !== '/api/notes' && !/^\/api\/notes\/[^/]+$/.test(url.pathname)) return json({ error: 'Not found' }, 404)
-  const owner = await ownerId(request)
+  if (url.pathname === '/api/auth/access') {
+    if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405)
+    return json(await accountAccess(request.headers.get('authorization'), env, fetch, request.signal))
+  }
+  if (url.pathname !== '/api/feedback' && url.pathname !== '/api/speech/session' && url.pathname !== '/api/refine' && url.pathname !== '/api/notes' && !/^\/api\/notes\/[^/]+$/.test(url.pathname)) return json({ error: 'Not found' }, 404)
+  const owner = await approvedOwner(request.headers.get('authorization'), env, fetch, request.signal)
+  if (url.pathname === '/api/feedback') {
+    if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
+    const body = await readBody(request)
+    if (!body || typeof body !== 'object' || !('id' in body) || typeof body.id !== 'string' || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(body.id) || !('message' in body) || typeof body.message !== 'string' || !body.message.trim()) return json({ error: 'Write some feedback before submitting.' }, 400)
+    const message = body.message.trim()
+    if (message.length > 2000) return json({ error: 'Keep feedback under 2,000 characters.' }, 413)
+    if (!(await env.FEEDBACK_LIMITER.limit({ key: owner })).success) return json({ error: 'Please wait a minute before sending more feedback.' }, 429)
+    await env.DB.prepare('INSERT INTO feedback (owner_id, id, message, created_at) VALUES (?1, ?2, ?3, ?4) ON CONFLICT(owner_id, id) DO NOTHING').bind(owner, body.id, message, new Date().toISOString()).run()
+    const saved = await env.DB.prepare('SELECT message FROM feedback WHERE owner_id = ?1 AND id = ?2').bind(owner, body.id).first<{ message: string }>()
+    if (!saved || saved.message !== message) return json({ error: 'This feedback was already submitted. Please try again with a new message.' }, 409)
+    return json({ ok: true }, 201)
+  }
   if (url.pathname === '/api/speech/session') {
     if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
     const key = request.headers.get('CF-Connecting-IP') ?? owner
@@ -116,7 +128,7 @@ export default {
     try {
       response = request.method === 'OPTIONS' ? new Response(null, { status: 204 }) : await route(request, env)
     } catch (error) {
-      if (error instanceof HttpError || error instanceof RefineError) response = json({ error: error.message }, error.status)
+      if (error instanceof HttpError || error instanceof RefineError || error instanceof AuthError) response = json({ error: error.message }, error.status)
       else {
         const requestId = crypto.randomUUID()
         console.error(JSON.stringify({ event: 'request_failed', requestId }))

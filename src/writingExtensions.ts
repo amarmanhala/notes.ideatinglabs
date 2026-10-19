@@ -8,6 +8,7 @@ import Italic from '@tiptap/extension-italic'
 import { UndoRedo } from '@tiptap/extensions'
 import { RefinementDecorations } from './refinementEditor'
 import { TaskCheckboxSlots } from './taskCheckboxSlots'
+import { ConfirmClearNotes } from './confirmClearNotes'
 
 const SelectedBold = Bold.extend({
   addKeyboardShortcuts() {
@@ -32,4 +33,4 @@ const WritingParagraph = Paragraph.extend({
   addKeyboardShortcuts() { return { 'Shift-Enter': () => this.editor.commands.splitBlock() } },
 })
 
-export const writingExtensions = [Document, WritingParagraph, Text, SelectedBold, SelectedItalic, UndoRedo, RefinementDecorations, TaskCheckboxSlots, DictationPreview, TaskTimerTextChanges]
+export const writingExtensions = [Document, WritingParagraph, Text, SelectedBold, SelectedItalic, UndoRedo, ConfirmClearNotes, RefinementDecorations, TaskCheckboxSlots, DictationPreview, TaskTimerTextChanges]

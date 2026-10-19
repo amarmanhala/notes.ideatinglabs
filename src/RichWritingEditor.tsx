@@ -16,6 +16,8 @@ import type { Paragraph, RefinementEdit } from './refinementState'
 import type { TaskParagraph } from './taskParagraphs'
 import { TaskTimers } from './TaskTimers'
 import { TaskCheckboxes } from './TaskCheckboxes'
+import { ClearNotesDialog } from './ClearNotesDialog'
+import { ConfirmClearNotes, type ClearNotesRequest } from './confirmClearNotes'
 
 const NO_REFINING: Paragraph[] = []
 const NO_TASKS: TaskParagraph[] = []
@@ -46,11 +48,13 @@ type Props = {
   onChange: (text: string, formats: TextFormat[], editStart?: number, edits?: RefinementEdit[], tasks?: TaskParagraph[]) => void
 }
 export function RichWritingEditor({ ref, text, formats, hideCaret, searchQuery, matches, activeMatch, onChange, onParagraphComplete, onDictationInvalidated, refiningParagraphs = NO_REFINING, tasks = NO_TASKS }: Props) {
+  const [clearRequest, setClearRequest] = useState<ClearNotesRequest | null>(null)
+  const [extensions] = useState(() => writingExtensions.map(extension => extension.name === 'confirmClearNotes' ? ConfirmClearNotes.configure({ onRequest: setClearRequest }) : extension))
   const [slash, setSlash] = useState<{ left: number; top: number } | null>(null)
   const [insertNotice, setInsertNotice] = useState('')
   const [initialContent] = useState(() => toRichDocument(text, formats, tasks))
   const editor = useEditor({
-    extensions: writingExtensions,
+    extensions,
     content: initialContent,
     autofocus: 'end',
     injectCSS: false,
@@ -160,6 +164,15 @@ export function RichWritingEditor({ ref, text, formats, hideCaret, searchQuery, 
     const paragraph = { id: `p:${start}`, start, end: start + content.length, text: content }
     if (editor.chain().splitBlock().setMeta('refine-enter', paragraph).run()) event.preventDefault()
   }}>
+    {clearRequest && <ClearNotesDialog onKeep={() => {
+      clearRequest.cancel()
+      setClearRequest(null)
+      requestAnimationFrame(() => { if (editor && !editor.isDestroyed) editor.commands.focus(undefined, { scrollIntoView: false }) })
+    }} onDelete={() => {
+      clearRequest.confirm()
+      setClearRequest(null)
+      requestAnimationFrame(() => { if (editor && !editor.isDestroyed) editor.commands.focus(undefined, { scrollIntoView: false }) })
+    }} />}
     <SearchHighlights editor={editor} query={searchQuery} matches={matches} activeMatch={activeMatch} />
     <EditorContent editor={editor} className="relative h-full min-h-0" />
     <TaskCheckboxes editor={editor} tasks={tasks} />

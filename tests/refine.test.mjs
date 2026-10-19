@@ -5,14 +5,16 @@ import { build } from 'esbuild'
 const built = await build({ stdin: { contents: `export { refineNote, refineParagraphBatch } from './worker/refine'; export { default as worker } from './worker/index'; export { parseHistory, applyWritingChange } from './src/writingSessions'; export { parseLearningResources } from './src/learningResources';`, resolveDir: process.cwd() }, bundle: true, platform: 'browser', format: 'esm', write: false })
 const { refineNote, refineParagraphBatch, worker, parseHistory, applyWritingChange, parseLearningResources } = await import(`data:text/javascript;base64,${Buffer.from(built.outputFiles[0].text).toString('base64')}`)
 const completed = (text, learningTopic = '') => Response.json({ status: 'completed', output: [{ type: 'message', content: [{ type: 'output_text', text: JSON.stringify({ text, learningTopic }) }] }] })
-const headers = { Authorization: `Bearer ${'a'.repeat(64)}`, 'Content-Type': 'application/json', Origin: 'http://127.0.0.1:5173' }
-const env = { ALLOWED_ORIGINS: 'http://127.0.0.1:5173', OPENAI_API_KEY: 'test-only', REFINE_LIMITER: { limit: async () => ({ success: true }) } }
+const headers = { Authorization: `Bearer ${'a.a.a'}`, 'Content-Type': 'application/json', Origin: 'http://127.0.0.1:5173' }
+const env = { SUPABASE_URL:'https://auth.test',SUPABASE_PUBLISHABLE_KEY:'public-test', ALLOWED_ORIGINS: 'http://127.0.0.1:5173', OPENAI_API_KEY: 'test-only', REFINE_LIMITER: { limit: async () => ({ success: true }) } }
 const request = (body, customHeaders = headers, method = 'POST') => new Request('https://notes.test/api/refine', { method, headers: customHeaders, ...(method === 'POST' ? { body: JSON.stringify(body) } : {}) })
+const authFetch = (url) => url.includes('/auth/v1/user') ? Response.json({id:'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa',email:'a@test.example',email_confirmed_at:'2026-10-01'}) : url.includes('/rest/v1/') ? Response.json([{status:'approved'}]) : null
 const completedBatch = paragraphs => Response.json({status:'completed',output:[{type:'message',content:[{type:'output_text',text:JSON.stringify({paragraphs:paragraphs.map(p=>({isTodo:false,...p}))})}]}]})
 
 test('batch endpoint edits only the identified paragraphs in one model request',async t=>{
  let calls=0
  t.mock.method(globalThis,'fetch',async (_url,init)=>{
+   const auth=authFetch(_url); if(auth)return auth
    calls++
    const body=JSON.parse(init.body)
    assert.equal(body.store,false)
@@ -128,7 +130,7 @@ test('upstream failures and timeouts return helpful messages without exposing cr
 })
 
 test('authenticated POST returns a refinement with CORS and no caching', async t => {
-  t.mock.method(globalThis, 'fetch', async () => completed('A clear note.'))
+  t.mock.method(globalThis, 'fetch', async url => authFetch(url) ?? completed('A clear note.'))
   const response = await worker.fetch(request({ text: 'a rough note' }), env)
   assert.equal(response.status, 200)
   assert.equal(response.headers.get('Cache-Control'), 'no-store')
@@ -137,7 +139,8 @@ test('authenticated POST returns a refinement with CORS and no caching', async t
   assert.deepEqual(await response.json(), { text: 'A clear note.', resources: [] })
 })
 
-test('Refine rejects unauthenticated, disallowed-origin, wrong-method and rate-limited requests', async () => {
+test('Refine rejects unauthenticated, disallowed-origin, wrong-method and rate-limited requests', async t => {
+  t.mock.method(globalThis,'fetch',async url=>authFetch(url) ?? assert.fail('Unexpected OpenAI call'))
   assert.equal((await worker.fetch(request({ text: 'note' }, { 'Content-Type': 'application/json' }), env)).status, 401)
   assert.equal((await worker.fetch(request({ text: 'note' }, { ...headers, Origin: 'https://other.example' }), env)).status, 403)
   assert.equal((await worker.fetch(request(undefined, headers, 'GET'), env)).status, 405)

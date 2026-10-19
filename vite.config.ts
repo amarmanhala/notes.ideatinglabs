@@ -6,7 +6,7 @@ import { Agent } from 'node:https'
 import { isIP } from 'node:net'
 import { refineNote, refineParagraphBatch, RefineError } from './worker/refine.ts'
 import { createSpeechSession } from './worker/speech.ts'
-import { createHash } from 'node:crypto'
+import { accountAccess, approvedOwner, AuthError } from './worker/auth.ts'
 import { openaiDiagnostics } from './server/openaiDiagnostics.ts'
 
 const backendHost = 'notes.ideatinglabs.com'
@@ -34,12 +34,31 @@ const backendAgent = new Agent({
   },
 })
 
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ mode, command }) => {
   const serverEnv = loadEnv(mode, process.cwd(), '')
+  if (command === 'build' && (!serverEnv.VITE_SUPABASE_URL || !serverEnv.VITE_SUPABASE_PUBLISHABLE_KEY)) {
+    throw new Error('Set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY before building the frontend.')
+  }
+  const authSettings = {
+    SUPABASE_URL: process.env.SUPABASE_URL || serverEnv.SUPABASE_URL || serverEnv.VITE_SUPABASE_URL,
+    SUPABASE_PUBLISHABLE_KEY: process.env.SUPABASE_PUBLISHABLE_KEY || serverEnv.SUPABASE_PUBLISHABLE_KEY || serverEnv.VITE_SUPABASE_PUBLISHABLE_KEY,
+  }
   return {
   plugins: [react(), tailwindcss(), {
     name: 'local-note-refine',
     configureServer(server) {
+      server.middlewares.use('/api/auth/access', async (request, response) => {
+        response.setHeader('Content-Type', 'application/json')
+        response.setHeader('Cache-Control', 'no-store')
+        try {
+          if (request.method !== 'GET') throw new AuthError(405, 'Method not allowed')
+          if (request.headers.origin && request.headers.origin !== `http://${request.headers.host}`) throw new AuthError(403, 'Origin not allowed')
+          response.end(JSON.stringify(await accountAccess(request.headers.authorization ?? null, authSettings)))
+        } catch (error) {
+          response.statusCode = error instanceof AuthError ? error.status : 500
+          response.end(JSON.stringify({ error: error instanceof AuthError ? error.message : 'Unable to check account access.' }))
+        }
+      })
       const speechAttempts = new Map<string, { count: number; until: number }>()
       server.middlewares.use('/api/speech/session', async (request, response) => {
         response.setHeader('Content-Type', 'application/json')
@@ -49,10 +68,9 @@ export default defineConfig(({ mode }) => {
         try {
           if (request.method !== 'POST') throw new RefineError(405, 'Method not allowed')
           if (request.headers.origin && request.headers.origin !== `http://${request.headers.host}`) throw new RefineError(403, 'Origin not allowed')
-          if (!/^Bearer [a-f0-9]{64}$/.test(request.headers.authorization ?? '')) throw new RefineError(401, 'A private browser key is required')
           const now = Date.now()
           for (const [key, attempt] of speechAttempts) if (attempt.until <= now) speechAttempts.delete(key)
-          const owner = createHash('sha256').update(request.headers.authorization!.slice(7)).digest('hex')
+          const owner = await approvedOwner(request.headers.authorization ?? null, authSettings)
           const limitKey = request.socket.remoteAddress ?? owner
           const attempt = speechAttempts.get(limitKey) ?? { count: 0, until: now + 60_000 }
           if (++attempt.count > 5) throw new RefineError(429, 'Please wait a minute before speaking again.')
@@ -60,8 +78,8 @@ export default defineConfig(({ mode }) => {
           const result = await createSpeechSession(serverEnv.OPENAI_API_KEY || process.env.OPENAI_API_KEY, owner, fetch, lifecycle.signal)
           response.end(JSON.stringify(result))
         } catch (error) {
-          response.statusCode = error instanceof RefineError ? error.status : 500
-          response.end(JSON.stringify({ error: error instanceof RefineError ? error.message : 'Could not connect. Click the mic to try again.' }))
+          response.statusCode = error instanceof RefineError || error instanceof AuthError ? error.status : 500
+          response.end(JSON.stringify({ error: error instanceof RefineError || error instanceof AuthError ? error.message : 'Could not connect. Click the mic to try again.' }))
         }
       })
       // This middleware runs only in Node during local development. The key is never bundled.
@@ -71,7 +89,7 @@ export default defineConfig(({ mode }) => {
         try {
           if (request.method !== 'POST') throw new RefineError(405, 'Method not allowed')
           if (request.headers.origin && request.headers.origin !== `http://${request.headers.host}`) throw new RefineError(403, 'Origin not allowed')
-          if (!/^Bearer [a-f0-9]{64}$/.test(request.headers.authorization ?? '')) throw new RefineError(401, 'A private browser key is required')
+          await approvedOwner(request.headers.authorization ?? null, authSettings)
           if (!request.headers['content-type']?.startsWith('application/json')) throw new RefineError(415, 'Expected application/json')
           const chunks: Buffer[] = []
           let size = 0
@@ -113,8 +131,8 @@ export default defineConfig(({ mode }) => {
             : await refineNote(text, key, diagnosticFetch)
           response.end(JSON.stringify(refined))
         } catch (error) {
-          response.statusCode = error instanceof RefineError ? error.status : 500
-          response.end(JSON.stringify({ error: error instanceof RefineError ? error.message : 'Unable to refine. Your note is unchanged.' }))
+          response.statusCode = error instanceof RefineError || error instanceof AuthError ? error.status : 500
+          response.end(JSON.stringify({ error: error instanceof RefineError || error instanceof AuthError ? error.message : 'Unable to refine. Your note is unchanged.' }))
         }
       })
     },

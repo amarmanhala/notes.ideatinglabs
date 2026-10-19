@@ -1,4 +1,4 @@
-import { browserKey } from './cloudSync'
+import { getAccessToken } from './authClient'
 import { recordApiActivity } from './apiActivityStore'
 
 export type SpeechPhase = 'connecting' | 'listening' | 'finishing' | 'idle'
@@ -60,7 +60,8 @@ export class SpeechTranscription {
   private id = crypto.randomUUID()
   private called = false
   private diagnosticState: 'success' | 'error' | 'cancelled' = 'success'
-  constructor(callbacks: Callbacks) { this.callbacks = callbacks }
+  private getToken: () => Promise<string>
+  constructor(callbacks: Callbacks, getToken = getAccessToken) { this.callbacks = callbacks; this.getToken = getToken }
   private later(action: () => void, delay: number) {
     const timer = setTimeout(() => { this.timers.delete(timer); action() }, delay)
     this.timers.add(timer)
@@ -83,7 +84,7 @@ export class SpeechTranscription {
       this.called = true
       this.diagnostic('pending')
       const response = await fetch(`${apiBase.replace(/\/$/, '')}/api/speech/session`, {
-        method: 'POST', headers: { Authorization: `Bearer ${browserKey(localStorage)}` }, signal: this.controller.signal,
+        method: 'POST', headers: { Authorization: `Bearer ${await this.getToken()}` }, signal: this.controller.signal,
       })
       const session = await response.json()
       if (!response.ok) throw new Error(session.error || 'Could not connect. Click the mic to try again.')

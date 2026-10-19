@@ -189,3 +189,23 @@ test('a new cloud write during resolution is protected by revision checks',async
  await assert.rejects(f.engine.resolve(conflict,'local'),/changed again/)
  assert.deepEqual(f.backups,[conflict]);assert.equal(f.statuses.at(-1),'conflict');f.engine.stop()
 })
+
+test('sign-out while retrieving a credential prevents a late account request',async()=>{
+ const lifecycle=new AbortController()
+ let finishToken
+ let calls=0
+ const api=createCloudApi('https://notes.test',()=>new Promise(resolve=>{finishToken=resolve}),lifecycle.signal,async()=>{calls++;return Response.json({history:{},revisions:{}})})
+ const loading=api.load()
+ lifecycle.abort();finishToken('old-account-token')
+ await assert.rejects(loading,error=>error.name==='AbortError')
+ assert.equal(calls,0)
+})
+test('a stopped account sync ignores a late cloud history response',async()=>{
+ let finishLoad
+ let published=0,persisted=0,saved=0
+ const engine=new NotesSync({history:{},bases:{},api:{load:()=>new Promise(resolve=>{finishLoad=resolve}),save:async()=>{saved++;return 1}},persist:()=>persisted++,onHistory:()=>published++,onStatus:()=>{}})
+ const loading=engine.start()
+ engine.stop();finishLoad({history:{[day]:entry('Other account history')},revisions:{[day]:1}})
+ await loading
+ assert.equal(published,0);assert.equal(persisted,0);assert.equal(saved,0)
+})
