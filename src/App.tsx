@@ -25,15 +25,22 @@ import { Alert } from '@openai/apps-sdk-ui/components/Alert'
 import { Button } from '@openai/apps-sdk-ui/components/Button'
 import { Tooltip } from '@openai/apps-sdk-ui/components/Tooltip'
 import { useWritingCaret } from './useWritingCaret'
-import { SessionTimestamps } from './SessionTimestamps'
-import { Clock, Search, ChevronUp, ChevronDown } from '@openai/apps-sdk-ui/components/Icon'
+import { Search, ChevronUp, ChevronDown, Moon, Sun } from '@openai/apps-sdk-ui/components/Icon'
+import { applyDocumentTheme } from '@openai/apps-sdk-ui/theme'
 import { findTextMatches, moveSearchMatch } from './noteSearch'
-import { Animate, AnimateLayout } from '@openai/apps-sdk-ui/components/Transition'
+import { AnimateLayout } from '@openai/apps-sdk-ui/components/Transition'
 import { useCloudNotes } from './useCloudNotes'
-import { applyWritingChange, parseHistory, STORAGE_KEY, type History, type WritingSession } from './writingSessions'
+import { applyWritingChange, parseHistory, STORAGE_KEY, type History } from './writingSessions'
 
-const NO_SESSIONS: WritingSession[] = []
 const NO_FORMATS: TextFormat[] = []
+const THEME_KEY = 'notes.theme'
+type Theme = 'light' | 'dark'
+
+function storedTheme(): Theme {
+  try { return localStorage.getItem(THEME_KEY) === 'dark' ? 'dark' : 'light' }
+  catch { return 'light' }
+}
+
 function dayKey(date = new Date()) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 }
@@ -64,7 +71,7 @@ function WritingPage() {
   const refining = useSyncExternalStore(refinement.subscribe, refinement.getSnapshot)
   const [saveFailed, setSaveFailed] = useState(initial.error)
   const [downloadError, setDownloadError] = useState<string | null>(null)
-  const [showTimes, setShowTimes] = useState(false)
+  const [theme, setTheme] = useState<Theme>(storedTheme)
   const [reviewOpen, setReviewOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
@@ -77,6 +84,11 @@ function WritingPage() {
   const matches = useMemo(() => findTextMatches(text, searchQuery), [text, searchQuery])
   const activeMatch = Math.min(matchIndex, Math.max(0, matches.length - 1))
   const caret = useWritingCaret(editor, text, selectedDay)
+
+  useLayoutEffect(() => {
+    applyDocumentTheme(theme)
+    try { localStorage.setItem(THEME_KEY, theme) } catch { /* Keep the theme for this page. */ }
+  }, [theme])
 
   function write(value: string, formats: TextFormat[], editStart?: number, refined?: RefinedParagraph[], edits?: RefinementEdit[], tasks?: TaskParagraph[]) {
     const current = historyRef.current[selectedDay]
@@ -144,12 +156,6 @@ function WritingPage() {
       <header className="flex min-h-16 shrink-0 flex-wrap content-center items-center justify-between gap-4 px-6">
         <span className="text-sm text-secondary"><span className="text-primary">Today</span> · {formatDay(selectedDay, { month: 'long', day: 'numeric', year: 'numeric' })}</span>
         <div className="ml-auto flex min-w-0 items-center gap-2">
-          {text.trim() && <Tooltip content={showTimes ? 'Hide timestamps' : 'Show timestamps'} compact side="bottom">
-          <Button color="secondary" variant="ghost" size="sm" uniform pill={false} selected={showTimes} aria-label={showTimes ? 'Hide timestamps' : 'Show timestamps'} aria-pressed={showTimes} onClick={() => {
-            setShowTimes(!showTimes)
-            editor.current?.focus({ preventScroll: true })
-          }}><Clock /></Button>
-          </Tooltip>}
           {text.trim() && <DownloadNote text={text} formats={entry?.formats ?? NO_FORMATS} day={selectedDay} onError={setDownloadError} />}
           {refining.error && <span role="status" className="max-w-64 text-xs text-secondary">{refining.error}</span>}
           <span className="sr-only" role="status" aria-live="polite">{refining.announcement}</span>
@@ -182,10 +188,6 @@ function WritingPage() {
       <div className="flex min-h-0 flex-1 overflow-hidden">
       <section className="min-h-0 min-w-0 flex-1 overflow-hidden px-6" aria-label="Writing">
         <div data-writing-surface className="relative flex h-full min-w-0">
-        <div className="h-full w-[68px] shrink-0" aria-hidden="true" />
-        <Animate as="div" transitionPosition="static" className="pointer-events-none absolute inset-0 z-20" transitionClassName="h-full" initial={{ opacity: 0, x: -4 }} enter={{ opacity: 1, x: 0, duration: 200 }} exit={{ opacity: 0, x: -4, duration: 150 }}>
-          {showTimes && <SessionTimestamps key="timestamps" editor={editor} sessions={entry?.sessions ?? NO_SESSIONS} text={text} day={selectedDay} taskGutter={!!entry?.tasks?.length} />}
-        </Animate>
         <div className="relative h-full min-w-0 flex-1">
         <WelcomeOnboarding userId={userId} profile={session!.user.user_metadata} storage={storage} onFinish={() => editor.current?.focus({ preventScroll: true })}>
         <RichWritingEditor key={selectedDay} ref={editor} text={text} formats={entry?.formats ?? NO_FORMATS} hideCaret={!!caret} searchQuery={searchQuery} matches={matches} activeMatch={activeMatch} tasks={entry?.tasks} onChange={(value, formats, editStart, edits, tasks) => write(value, formats, editStart, undefined, edits, tasks)} onDictationInvalidated={() => speech.current?.cancel(false)} onParagraphComplete={paragraph => refinement.complete(paragraph)} refiningParagraphs={refining.pending} />
@@ -204,7 +206,14 @@ function WritingPage() {
       </div>
       <footer className="flex min-h-9 shrink-0 flex-wrap content-center items-center justify-between gap-2 px-6 py-1 text-sm text-secondary">
         <span role="status">{saveFailed ? 'Unable to save' : cloud.status === 'loading' ? 'Connecting…' : cloud.status === 'saving' ? 'Saving to cloud…' : cloud.status === 'saved' ? (entry ? 'Saved to cloud' : 'Ready when you are') : cloud.status === 'conflict' ? 'Local draft · conflict' : cloud.status === 'offline' ? 'Saved locally · offline' : 'Saved locally · cloud unavailable'}</span>
-        {import.meta.env.DEV && <DevApiActivity />}
+        <div className="flex items-center gap-2">
+          {import.meta.env.DEV && <DevApiActivity />}
+          <Tooltip content={`Use ${theme === 'light' ? 'dark' : 'light'} mode`} compact side="top">
+            <Button color="secondary" variant="ghost" size="sm" uniform pill={false} aria-label={`Use ${theme === 'light' ? 'dark' : 'light'} mode`} onClick={() => setTheme(current => current === 'light' ? 'dark' : 'light')}>
+              {theme === 'light' ? <Moon /> : <Sun />}
+            </Button>
+          </Tooltip>
+        </div>
       </footer>
       </div>
       <AnimateLayout as="div" dimension="width" itemAnchor="end" className="h-full" transitionClassName="h-full" hideOverflow initial={{ opacity: 0, x: 12 }} enter={{ opacity: 1, x: 0, duration: 200, delay: 40 }} exit={{ opacity: 0, x: 12, duration: 140 }} layoutEnter={{ duration: 240 }} layoutExit={{ duration: 200 }} layoutMove={{ duration: 240 }}>

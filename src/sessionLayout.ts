@@ -2,9 +2,34 @@ import type { WritingSession } from './writingSessions'
 
 type Point = { left: number; top: number; height?: number }
 export type SessionLabel = Point & { session: WritingSession }
-export function positionSessionLabels(sessions: WritingSession[], pointAt: (offset: number) => Point, scrollTop: number, scrollLeft = 0, origin: Point = { left: 0, top: 0 }): SessionLabel[] {
+export function timelineOffset(text: string, anchorOffset: number) {
+  const offset = Math.max(0, Math.min(anchorOffset, text.length))
+  const lines = text.split('\n')
+  let lineStart = 0
+  let lineIndex = 0
+  for (; lineIndex < lines.length; lineIndex++) {
+    const lineEnd = lineStart + lines[lineIndex].length
+    if (offset <= lineEnd) break
+    lineStart = lineEnd + 1
+  }
+  if (lines[lineIndex]?.trim()) return offset
+  for (let index = lineIndex + 1, start = lineStart + (lines[lineIndex]?.length ?? 0) + 1; index < lines.length; index++) {
+    const content = lines[index]
+    if (content.trim()) return start + content.search(/\S/)
+    start += content.length + 1
+  }
+  for (let index = lineIndex - 1, start = lineStart - 1; index >= 0; index--) {
+    start -= lines[index].length
+    const content = lines[index]
+    if (content.trim()) return start + content.length
+    start--
+  }
+  return offset
+}
+
+export function positionSessionLabels(sessions: WritingSession[], pointAt: (offset: number) => Point, scrollTop: number, scrollLeft = 0, origin: Point = { left: 0, top: 0 }, text?: string): SessionLabel[] {
   return sessions.map(session => {
-    const point = pointAt(session.anchorOffset)
+    const point = pointAt(text === undefined ? session.anchorOffset : timelineOffset(text, session.anchorOffset))
     return { session, height: point.height ?? 20, left: origin.left + point.left - scrollLeft, top: origin.top + point.top - scrollTop }
   })
 }

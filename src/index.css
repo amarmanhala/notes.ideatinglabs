@@ -4,12 +4,22 @@
 
 .refine-thinking {
   color: var(--gray-400);
-  background-image: linear-gradient(100deg, var(--gray-400) 30%, var(--gray-200) 50%, var(--gray-400) 70%);
-  background-size: 250% 100%;
+  background-image: linear-gradient(100deg, var(--gray-400) 20%, var(--gray-200) 42%, #0285ff 50%, var(--gray-200) 58%, var(--gray-400) 80%);
+  background-size: 300% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  -webkit-text-fill-color: transparent;
+  animation: refine-thinking-sweep 2.4s linear infinite;
+}
+
+[data-theme='dark'] .refine-thinking {
+  color: var(--gray-500);
+  background-image: linear-gradient(100deg, var(--gray-500) 20%, #8dcbff 42%, #fff 50%, #8dcbff 58%, var(--gray-500) 80%);
   background-clip: text;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
-  animation: refine-thinking-sweep 3s linear infinite;
 }
 
 @keyframes refine-thinking-sweep {

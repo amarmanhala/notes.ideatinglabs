@@ -15,7 +15,11 @@ export const RefinementDecorations = Extension.create({
         init: () => DecorationSet.empty,
         apply(transaction, current) {
           const ranges: Replacement[] | undefined = transaction.getMeta(refinementDecorationKey)
-          if (ranges !== undefined) return DecorationSet.create(transaction.doc, ranges.map(range => Decoration.node(documentPosition(transaction.doc, range.start) - 1, documentPosition(transaction.doc, range.end) + 1, { class: 'refine-thinking' })))
+          if (ranges !== undefined) return DecorationSet.create(transaction.doc, ranges.map(range => {
+            const from = documentPosition(transaction.doc, range.start)
+            const to = documentPosition(transaction.doc, range.end)
+            return Decoration.inline(from, to, { class: 'refine-thinking' })
+          }))
           return transaction.docChanged ? DecorationSet.empty : current
         },
       },

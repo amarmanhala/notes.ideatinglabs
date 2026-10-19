@@ -8,7 +8,7 @@ export function ClearNotesDialog({ onKeep, onDelete }: { onKeep: () => void; onD
     if (dialog.current && !dialog.current.open) dialog.current.showModal()
   }, [])
   return <dialog ref={dialog} role="alertdialog" aria-modal="true" aria-labelledby="clear-notes-title" aria-describedby="clear-notes-description"
-    data-theme="light" onCancel={event => { event.preventDefault(); onKeep() }} onClose={onKeep}
+    onCancel={event => { event.preventDefault(); onKeep() }} onClose={onKeep}
     className="fixed inset-0 m-auto w-[calc(100%-2rem)] max-w-md rounded-2xl border-0 bg-surface p-6 text-primary shadow-2xl backdrop:bg-black/40 sm:p-8">
     <Alert color="primary" variant="outline" indicator={false} className="p-0 shadow-none!" actionsPlacement="bottom"
       title={<h2 id="clear-notes-title" className="text-xl font-semibold">Delete all notes on this page?</h2>}

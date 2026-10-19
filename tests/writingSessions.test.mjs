@@ -127,7 +127,15 @@ test('input positions disambiguate edits in repeated text', () => {
 
 const layoutSource = await readFile(new URL('../src/sessionLayout.ts', import.meta.url), 'utf8')
 const layoutCompiled = ts.transpileModule(layoutSource, { compilerOptions: { module: ts.ModuleKind.ESNext } }).outputText
-const { positionSessionLabels, groupTimelineLabels } = await import(`data:text/javascript;base64,${Buffer.from(layoutCompiled).toString('base64')}`)
+const { positionSessionLabels, groupTimelineLabels, timelineOffset } = await import(`data:text/javascript;base64,${Buffer.from(layoutCompiled).toString('base64')}`)
+
+test('timeline markers skip empty lines without changing their saved anchors', () => {
+  assert.equal(timelineOffset('alpha\n\nbeta', 6), 7)
+  assert.equal(timelineOffset('alpha\n   \nbeta', 7), 10)
+  assert.equal(timelineOffset('\nalpha', 0), 1)
+  assert.equal(timelineOffset('alpha\n', 6), 5)
+  assert.equal(timelineOffset('alpha\nbeta', 7), 7)
+})
 
 test('labels stay at their anchored word instead of being shifted into a stack', () => {
   let entry = write(undefined, 'abc')

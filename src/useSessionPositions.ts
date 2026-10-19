@@ -20,7 +20,7 @@ export function useSessionPositions(ref: RefObject<WritingEditorHandle | null>, 
       const next = positionSessionLabels(sessions, offset => handle!.pointAt(offset), input.scrollTop, input.scrollLeft, {
         left: inputRect.left - surfaceRect.left,
         top: inputRect.top - surfaceRect.top,
-      })
+      }, text)
       setLabels(next)
     }
     function schedule() {
