@@ -154,17 +154,17 @@ function WritingPage() {
   return (
     <main className="flex h-dvh w-screen overflow-hidden bg-surface text-primary">
       <div className={`relative min-h-0 min-w-0 flex-1 flex-col overflow-hidden ${reviewOpen ? 'hidden md:flex' : 'flex'}`}>
-      <header className="flex min-h-16 shrink-0 flex-wrap content-center items-center justify-between gap-4 px-6">
-        <span className="text-sm text-secondary"><span className="text-primary">Today</span> · {formatDay(selectedDay, { month: 'long', day: 'numeric', year: 'numeric' })}</span>
-        <div className="ml-auto flex min-w-0 items-center gap-2">
-          {text.trim() && <DownloadNote text={text} formats={entry?.formats ?? NO_FORMATS} day={selectedDay} onError={setDownloadError} />}
-          {refining.error && <span role="status" className="max-w-64 text-xs text-secondary">{refining.error}</span>}
+      <header className={`flex min-h-16 shrink-0 content-center items-center justify-between ${searchOpen ? 'flex-nowrap gap-0 px-3 sm:gap-4 sm:px-6' : 'flex-wrap gap-4 px-6'}`}>
+        <span className={`text-sm text-secondary ${searchOpen ? 'hidden sm:inline' : ''}`}><span className="text-primary">Today</span> · {formatDay(selectedDay, { month: 'long', day: 'numeric', year: 'numeric' })}</span>
+        <div className={`${searchOpen ? 'ml-0 w-full sm:ml-auto sm:w-auto' : 'ml-auto'} flex min-w-0 items-center gap-2`}>
+          {text.trim() && <div className={searchOpen ? 'hidden sm:block' : ''}><DownloadNote text={text} formats={entry?.formats ?? NO_FORMATS} day={selectedDay} onError={setDownloadError} /></div>}
+          {refining.error && <span role="status" className={`max-w-64 text-xs text-secondary ${searchOpen ? 'hidden sm:inline' : ''}`}>{refining.error}</span>}
           <span className="sr-only" role="status" aria-live="polite">{refining.announcement}</span>
-          <div data-search-field className="flex items-center">
+          <div data-search-field className={`flex min-w-0 items-center ${searchOpen ? 'flex-1 sm:flex-none' : ''}`}>
             {!searchOpen ? <Tooltip content={<>Search notes <kbd className="ml-2 opacity-70">{searchShortcut}</kbd></>} compact side="bottom">
               <Button color="secondary" variant="ghost" size="sm" uniform pill={false} aria-label="Search notes" aria-keyshortcuts="Meta+K Control+K" aria-expanded={false} aria-controls="note-search" onClick={() => setSearchOpen(true)}><Search /></Button>
             </Tooltip> : <>
-            <div className="w-44 shrink-0 sm:w-56">
+            <div className="min-w-0 flex-1 sm:w-56 sm:flex-none">
             <Input ref={searchInput} id="note-search" type="search" size="lg" aria-label="Search notes" placeholder="Search notes" startAdornment={<Search />} value={searchQuery} onChange={event => { setSearchQuery(event.target.value); setMatchIndex(0) }} onKeyDown={event => {
               if (event.key === 'Enter') { event.preventDefault(); setMatchIndex(moveSearchMatch(activeMatch, event.shiftKey ? -1 : 1, matches.length)) }
               if (event.key === 'Escape') { event.preventDefault(); closeSearch() }
@@ -172,15 +172,15 @@ function WritingPage() {
             </div>
             <AnimateLayout as="div" dimension="width" itemAnchor="end" className="h-9" hideOverflow initial={{ opacity: 0 }} enter={{ opacity: 1, duration: 180, delay: 40 }} exit={{ opacity: 0, duration: 140 }} layoutEnter={{ duration: 220 }} layoutExit={{ duration: 180 }} layoutMove={{ duration: 220 }}>
             {searchQuery && <div key="search-controls" className="flex h-9 w-max items-center gap-1 pl-1">
-              <span role="status" aria-live="polite" className="w-28 shrink-0 truncate whitespace-nowrap px-2 text-center text-xs text-secondary tabular-nums" title={matches.length ? `${activeMatch + 1} of ${matches.length}` : 'No matches'}>{matches.length ? `${activeMatch + 1} of ${matches.length}` : 'No matches'}</span>
+              <span role="status" aria-live="polite" className="hidden w-28 shrink-0 truncate whitespace-nowrap px-2 text-center text-xs text-secondary tabular-nums sm:block" title={matches.length ? `${activeMatch + 1} of ${matches.length}` : 'No matches'}>{matches.length ? `${activeMatch + 1} of ${matches.length}` : 'No matches'}</span>
               <Tooltip content="Previous match (Shift+Enter)" compact side="bottom"><Button color="secondary" variant="ghost" size="sm" uniform pill={false} disabled={!matches.length} aria-label="Previous match" onClick={() => setMatchIndex(moveSearchMatch(activeMatch, -1, matches.length))}><ChevronUp /></Button></Tooltip>
               <Tooltip content="Next match (Enter)" compact side="bottom"><Button color="secondary" variant="ghost" size="sm" uniform pill={false} disabled={!matches.length} aria-label="Next match" onClick={() => setMatchIndex(moveSearchMatch(activeMatch, 1, matches.length))}><ChevronDown /></Button></Tooltip>
             </div>}
             </AnimateLayout>
-            <Tooltip content="Close search (Esc)" compact side="bottom"><Button className="ml-2" color="secondary" variant="ghost" size="sm" pill={false} onClick={closeSearch}>Done</Button></Tooltip>
+            <Tooltip content="Close search (Esc)" compact side="bottom"><Button className="ml-1 sm:ml-2" color="secondary" variant="ghost" size="sm" pill={false} onClick={closeSearch}>Done</Button></Tooltip>
             </>}
           </div>
-          <AccountMenu />
+          <div className={searchOpen ? 'hidden sm:block' : ''}><AccountMenu /></div>
         </div>
       </header>
       {downloadError && <div className="shrink-0 px-6 pt-4"><Alert color="danger" title="Unable to download" description={downloadError} /></div>}
