@@ -1,12 +1,23 @@
-import test from 'node:test'
+import test, { before, after, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
+import { readFile } from 'node:fs/promises'
+import { Miniflare, convertV4MiniflareOptions } from 'miniflare'
 
 const built = await build({ stdin: { contents: `export { refineNote, refineParagraphBatch } from './worker/refine'; export { default as worker } from './worker/index'; export { parseHistory, applyWritingChange } from './src/writingSessions'; export { parseLearningResources } from './src/learningResources';`, resolveDir: process.cwd() }, bundle: true, platform: 'browser', format: 'esm', write: false })
 const { refineNote, refineParagraphBatch, worker, parseHistory, applyWritingChange, parseLearningResources } = await import(`data:text/javascript;base64,${Buffer.from(built.outputFiles[0].text).toString('base64')}`)
 const completed = (text, learningTopic = '') => Response.json({ status: 'completed', output: [{ type: 'message', content: [{ type: 'output_text', text: JSON.stringify({ text, learningTopic }) }] }] })
 const headers = { Authorization: `Bearer ${'a.a.a'}`, 'Content-Type': 'application/json', Origin: 'http://127.0.0.1:5173' }
 const env = { SUPABASE_URL:'https://auth.test',SUPABASE_PUBLISHABLE_KEY:'public-test', ALLOWED_ORIGINS: 'http://127.0.0.1:5173', OPENAI_API_KEY: 'test-only', REFINE_LIMITER: { limit: async () => ({ success: true }) } }
+let mf
+before(async () => {
+  mf = new Miniflare(convertV4MiniflareOptions({ modules: true, script: 'export default {fetch(){return new Response("test")}}', compatibilityDate: '2026-10-14', d1Databases: { DB: 'refine-quota-test' } }))
+  env.DB = await mf.getD1Database('DB')
+  const sql = await readFile(new URL('../worker/migrations/0003_refinement_usage.sql', import.meta.url), 'utf8')
+  for (const statement of sql.split(';').map(s => s.trim()).filter(Boolean)) await env.DB.prepare(statement).run()
+})
+beforeEach(async () => { await env.DB.prepare('DELETE FROM refinement_usage').run() })
+after(async () => { await mf?.dispose() })
 const request = (body, customHeaders = headers, method = 'POST') => new Request('https://notes.test/api/refine', { method, headers: customHeaders, ...(method === 'POST' ? { body: JSON.stringify(body) } : {}) })
 const authFetch = (url) => url.includes('/auth/v1/user') ? Response.json({id:'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa',email:'a@test.example',email_confirmed_at:'2026-10-01'}) : url.includes('/rest/v1/') ? Response.json([{status:'approved'}]) : null
 const completedBatch = paragraphs => Response.json({status:'completed',output:[{type:'message',content:[{type:'output_text',text:JSON.stringify({paragraphs:paragraphs.map(p=>({isTodo:false,...p}))})}]}]})
@@ -40,6 +51,49 @@ test('grammar rules include the Uber case and add only words needed for a natura
  })
  assert.equal(calls,1)
  assert.deepEqual(result.paragraphs,[{id:'uber',text:'Drive for Uber for four hours.',resources:[],isTodo:true}])
+})
+
+test('both refinement paths add event emoji guidance without another request or changing the response schema', async () => {
+  const cases = [
+    ['Dad’s birthday, October 25.', '🎂 Dad’s birthday, October 25.', false, null],
+    ['Team meeting tomorrow at 3.', '📅 Team meeting tomorrow at 3.', false, null],
+    ['Flight to Toronto on Friday.', '✈️ Flight to Toronto on Friday.', false, null],
+    ['🎂 Dad’s birthday, October 25.', '🎂 Dad’s birthday, October 25.', false, null],
+    ['Maybe a party someday.', 'Maybe a party someday.', false, null],
+    ['I felt happy yesterday.', 'I felt happy yesterday.', false, null],
+    ['Buy milk.', 'Buy milk.', true, null],
+    ['Study React for 30 minutes.', 'Study React for 30 minutes.', true, 1800],
+  ]
+  let calls = 0
+  const fetcher = async (_url, init) => {
+    calls++
+    const body = JSON.parse(init.body)
+    assert.match(body.instructions, /prefix its paragraph with one relevant emoji/)
+    assert.match(body.instructions, /without adding or duplicating one/)
+    assert.match(body.instructions, /preserve all names, dates, times/i)
+    assert.match(body.instructions, /ordinary tasks.*reflections.*ambiguous notes/)
+    assert.equal(body.tools, undefined)
+    if (body.text.format.name === 'refined_note') return completed(cases[0][1])
+    assert.deepEqual(Object.keys(body.text.format.schema.properties), ['paragraphs'])
+    return completedBatch(cases.map(([, text, isTodo, timerSeconds], i) => ({ id: `p${i}`, text, isTodo, timerSeconds })))
+  }
+  const input = cases.map(([text], i) => ({ id: `p${i}`, text }))
+  const result = await refineParagraphBatch(input, 'test-only', fetcher)
+  assert.equal(calls, 1)
+  assert.deepEqual(result.paragraphs.map(p => [p.text, p.isTodo, p.timerSeconds]), cases.map(([, ...expected]) => expected))
+  const single = await refineNote(cases[0][0], 'test-only', fetcher)
+  assert.equal(calls, 2)
+  assert.equal(single.text, cases[0][1])
+})
+
+test('a leading event emoji is exempt from the existing word limit in single-note and batch validation', async () => {
+  const text = 'Dad’s birthday is on October 25 and the family will celebrate together.'
+  const fetcher = async (_url, init) => {
+    const body = JSON.parse(init.body)
+    return body.text.format.name === 'refined_note' ? completed(`🎂 ${text}`) : completedBatch([{ id: 'a', text: `🎂 ${text}`, isTodo: false }])
+  }
+  assert.equal((await refineNote(text, 'test-only', fetcher)).text, `🎂 ${text}`)
+  assert.equal((await refineParagraphBatch([{ id: 'a', text }], 'test-only', fetcher)).paragraphs[0].text, `🎂 ${text}`)
 })
 test('batch rejects partial, duplicate and malformed outputs',async()=>{
  const input=[{id:'a',text:'learn rect'},{id:'b',text:'other note'}]
@@ -146,4 +200,50 @@ test('Refine rejects unauthenticated, disallowed-origin, wrong-method and rate-l
   assert.equal((await worker.fetch(request(undefined, headers, 'GET'), env)).status, 405)
   assert.equal((await worker.fetch(request({ text: 'note' }), { ...env, REFINE_LIMITER: { limit: async () => ({ success: false }) } })).status, 429)
   assert.equal((await worker.fetch(request({ text: 'note' }), { ...env, OPENAI_API_KEY: undefined })).status, 503)
+})
+
+test('daily allowance counts each successful paragraph across requests and blocks OpenAI after twenty', async t => {
+  let calls = 0
+  t.mock.method(globalThis, 'fetch', async (url, init) => {
+    const auth = authFetch(url); if (auth) return auth
+    calls++
+    const input = JSON.parse(JSON.parse(init.body).input[0].content)
+    return completedBatch(input.paragraphs.map(p => ({ id: p.id, text: p.text })))
+  })
+  const paragraphs = Array.from({ length: 19 }, (_, i) => ({ id: `p${i}`, text: 'A thought.' }))
+  assert.equal((await worker.fetch(request({ paragraphs }), env)).status, 200)
+  // A batch cannot take more than the remaining allowance, even via owner spoofing.
+  const rejected = await worker.fetch(request({ paragraphs: paragraphs.slice(0, 2), owner_id: 'other' }), env)
+  assert.equal(rejected.status, 429)
+  const error = await rejected.json()
+  assert.equal(error.code, 'daily_refinement_limit')
+  assert.match(error.resetAt, /T00:00:00\.000Z$/)
+  assert.match(error.error, /Keep writing—more tomorrow/)
+  assert.equal(calls, 1)
+  assert.equal((await worker.fetch(request({ paragraphs: paragraphs.slice(0, 1) }), env)).status, 200)
+  const blocked = await worker.fetch(request({ text: 'A thought.' }), env)
+  assert.equal(blocked.status, 429)
+  assert.equal((await blocked.json()).code, 'daily_refinement_limit')
+  assert.equal(calls, 2)
+  const row = await env.DB.prepare('SELECT SUM(paragraphs) AS used FROM refinement_usage WHERE completed = 1').first()
+  assert.equal(row.used, 20)
+})
+
+test('invalid, failed, timed-out and cancelled responses consume no daily allowance', async t => {
+  const controller = new AbortController()
+  let mode = 'invalid'
+  t.mock.method(globalThis, 'fetch', async (url) => {
+    const auth = authFetch(url); if (auth) return auth
+    if (mode === 'invalid') return completedBatch([])
+    if (mode === 'failure') return new Response(null, { status: 500 })
+    if (mode === 'timeout') throw new DOMException('Timed out', 'TimeoutError')
+    controller.abort()
+    return completedBatch([{ id: 'a', text: 'A thought.' }])
+  })
+  for (mode of ['invalid', 'failure', 'timeout', 'cancelled']) {
+    const req = request({ paragraphs: [{ id: 'a', text: 'A thought.' }] })
+    const response = await worker.fetch(mode === 'cancelled' ? new Request(req, { signal: controller.signal }) : req, env)
+    assert.notEqual(response.status, 200)
+    assert.equal((await env.DB.prepare('SELECT COUNT(*) AS count FROM refinement_usage').first()).count, 0)
+  }
 })

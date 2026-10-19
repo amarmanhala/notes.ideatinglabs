@@ -13,6 +13,20 @@ function fixture(text){
 }
 function finish(call,text='Fixed note.') {call.resolve({paragraphs:[{id:call.paragraph.id,text,resources:[]}]})}
 
+test('daily-limit failure clears shimmer, preserves the note and shows the server message', async () => {
+ const {queue,calls,applied}=fixture('Keep this thought.\n')
+ queue.complete(noteParagraphs('Keep this thought.\n')[0])
+ assert.equal(queue.getSnapshot().pending.length,1)
+ const message='You’ve used today’s 20 AI refinements. Keep writing—more tomorrow.'
+ calls[0].reject(new Error(message));await settle()
+ assert.equal(queue.getSnapshot().error,message)
+ assert.deepEqual(queue.getSnapshot().pending,[])
+ assert.deepEqual(applied,[])
+ queue.update('Keep this thought.\nStill writing.',[],undefined,true)
+ assert.deepEqual(applied,[])
+ assert.equal(queue.getSnapshot().error,message)
+})
+
 test('refines completed paragraph while typing the next one, without duplicate requests',async()=>{
  const {queue,calls,applied}=fixture('rough\n')
  queue.complete(noteParagraphs('rough\n')[0]);queue.complete(noteParagraphs('rough\n')[0])

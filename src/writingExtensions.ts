@@ -5,7 +5,7 @@ import Paragraph from '@tiptap/extension-paragraph'
 import Text from '@tiptap/extension-text'
 import Bold from '@tiptap/extension-bold'
 import Italic from '@tiptap/extension-italic'
-import { UndoRedo } from '@tiptap/extensions'
+import { Placeholder, UndoRedo } from '@tiptap/extensions'
 import { RefinementDecorations } from './refinementEditor'
 import { TaskCheckboxSlots } from './taskCheckboxSlots'
 import { ConfirmClearNotes } from './confirmClearNotes'
@@ -33,4 +33,4 @@ const WritingParagraph = Paragraph.extend({
   addKeyboardShortcuts() { return { 'Shift-Enter': () => this.editor.commands.splitBlock() } },
 })
 
-export const writingExtensions = [Document, WritingParagraph, Text, SelectedBold, SelectedItalic, UndoRedo, ConfirmClearNotes, RefinementDecorations, TaskCheckboxSlots, DictationPreview, TaskTimerTextChanges]
+export const writingExtensions = [Document, WritingParagraph, Text, SelectedBold, SelectedItalic, UndoRedo, Placeholder.configure({ placeholder: 'Write a thought. Press Enter. See magic.', showOnlyCurrent: false }), ConfirmClearNotes, RefinementDecorations, TaskCheckboxSlots, DictationPreview, TaskTimerTextChanges]

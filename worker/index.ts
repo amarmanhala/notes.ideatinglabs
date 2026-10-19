@@ -3,7 +3,9 @@ import type { InferEnv } from 'cf/config'
 import type config from '../cloudflare.config'
 import { parseHistory, type Entry } from '../src/writingSessions'
 import { createSpeechSession } from './speech'
-import { refineNote, refineParagraphBatch, RefineError } from './refine'
+import { refineNote, refineParagraphBatch, refinementParagraphCount, RefineError } from './refine'
+import { DailyRefinementLimitError, withRefinementQuota } from './refinementQuota'
+import { D1RefinementQuota } from './refinementQuotaD1'
 
 type Env = InferEnv<typeof config.worker>
 const MAX_BODY_BYTES = 512 * 1024
@@ -75,9 +77,11 @@ async function route(request: Request, env: Env): Promise<Response> {
     if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
     const body = await readBody(request)
     if (!body || typeof body !== 'object' || !('text' in body || 'paragraphs' in body)) return json({ error: 'Expected note text or paragraphs' }, 400)
+    const count = refinementParagraphCount(body)
     const key = request.headers.get('CF-Connecting-IP') ?? owner
     if (!(await env.REFINE_LIMITER.limit({ key })).success) return json({ error: 'Please wait a minute before refining again.' }, 429)
-    return json('paragraphs' in body ? await refineParagraphBatch(body.paragraphs, env.OPENAI_API_KEY, fetch, request.signal) : await refineNote(body.text, env.OPENAI_API_KEY))
+    return json(await withRefinementQuota(new D1RefinementQuota(env.DB), owner, count, request.signal, async () =>
+      'paragraphs' in body ? await refineParagraphBatch(body.paragraphs, env.OPENAI_API_KEY, fetch, request.signal) : await refineNote(body.text, env.OPENAI_API_KEY, fetch, request.signal)))
   }
   if (url.pathname === '/api/notes') {
     if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405)
@@ -128,7 +132,8 @@ export default {
     try {
       response = request.method === 'OPTIONS' ? new Response(null, { status: 204 }) : await route(request, env)
     } catch (error) {
-      if (error instanceof HttpError || error instanceof RefineError || error instanceof AuthError) response = json({ error: error.message }, error.status)
+      if (error instanceof DailyRefinementLimitError) response = json({ error: error.message, code: error.code, resetAt: error.resetAt }, error.status)
+      else if (error instanceof HttpError || error instanceof RefineError || error instanceof AuthError) response = json({ error: error.message }, error.status)
       else {
         const requestId = crypto.randomUUID()
         console.error(JSON.stringify({ event: 'request_failed', requestId }))

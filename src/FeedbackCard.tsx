@@ -1,11 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '@openai/apps-sdk-ui/components/Button'
 import { Textarea } from '@openai/apps-sdk-ui/components/Textarea'
-import { Popover } from '@openai/apps-sdk-ui/components/Popover'
 import { API_BASE, getAccessToken } from './authClient'
 
 export function FeedbackCard({ userId }: { userId: string }) {
-  const [open, setOpen] = useState(false)
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState('')
@@ -36,15 +34,10 @@ export function FeedbackCard({ userId }: { userId: string }) {
       if (!controller.signal.aborted) setBusy(false)
     }
   }
-  return <Popover open={open} onOpenChange={setOpen}>
-    <Popover.Trigger><Button color="secondary" variant="ghost" size="sm" pill={false}>Feedback</Button></Popover.Trigger>
-    <Popover.Content side="top" align="end" sideOffset={10} width={320} minWidth={0} className="max-w-[calc(100vw-2rem)]">
-      <form aria-label="Send feedback" className="space-y-3 p-4" onSubmit={event => { event.preventDefault(); void submit() }}>
+  return <form aria-label="Send feedback" className="ml-auto w-80 max-w-full space-y-2 rounded-xl border border-default bg-surface p-3" onSubmit={event => { event.preventDefault(); void submit() }}>
         <div><h2 className="text-base font-semibold text-primary">Feedback</h2><p className="mt-1 text-sm text-secondary">What could we make better?</p></div>
-        <Textarea aria-label="Your feedback" placeholder="Share your thoughts…" rows={3} maxLength={2000} size="lg" value={message} disabled={busy} onChange={event => { setMessage(event.target.value); setStatus('') }} />
+        <Textarea aria-label="Your feedback" placeholder="Share your thoughts…" rows={2} maxLength={2000} size="lg" value={message} disabled={busy} onChange={event => { setMessage(event.target.value); setStatus('') }} />
         <div className="flex justify-end"><Button type="submit" color="primary" pill={false} size="md" loading={busy} disabled={busy || !message.trim()}>Submit</Button></div>
         {status && <p role="status" className="text-sm text-secondary">{status}</p>}
       </form>
-    </Popover.Content>
-  </Popover>
 }

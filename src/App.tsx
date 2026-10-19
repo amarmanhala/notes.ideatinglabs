@@ -77,7 +77,6 @@ function WritingPage() {
   const matches = useMemo(() => findTextMatches(text, searchQuery), [text, searchQuery])
   const activeMatch = Math.min(matchIndex, Math.max(0, matches.length - 1))
   const caret = useWritingCaret(editor, text, selectedDay)
-  const wordCount = text.trim() ? text.trim().split(/\s+/).length : 0
 
   function write(value: string, formats: TextFormat[], editStart?: number, refined?: RefinedParagraph[], edits?: RefinementEdit[], tasks?: TaskParagraph[]) {
     const current = historyRef.current[selectedDay]
@@ -200,11 +199,12 @@ function WritingPage() {
         <Button data-review-trigger color="primary" size="2xl" pill={false} aria-expanded={false} aria-controls="review-panel" onClick={() => setReviewOpen(true)}>Ask AI</Button>
       </div>}
       {(import.meta.env.VITE_SPEECH_ENABLED === 'true') && <SpeechControl key={selectedDay} ref={speech} editor={editor} onStart={() => refinement.cancel()} onComplete={paragraphs => paragraphs.forEach(paragraph => refinement.complete(paragraph))} />}
+      <div className="shrink-0 px-6 py-2">
+        <FeedbackCard userId={userId} />
+      </div>
       <footer className="flex min-h-9 shrink-0 flex-wrap content-center items-center justify-between gap-2 px-6 py-1 text-sm text-secondary">
-        <span>So far, you’ve written {wordCount} {wordCount === 1 ? 'word' : 'words'}.</span>
         <span role="status">{saveFailed ? 'Unable to save' : cloud.status === 'loading' ? 'Connecting…' : cloud.status === 'saving' ? 'Saving to cloud…' : cloud.status === 'saved' ? (entry ? 'Saved to cloud' : 'Ready when you are') : cloud.status === 'conflict' ? 'Local draft · conflict' : cloud.status === 'offline' ? 'Saved locally · offline' : 'Saved locally · cloud unavailable'}</span>
         {import.meta.env.DEV && <DevApiActivity />}
-        <FeedbackCard userId={userId} />
       </footer>
       </div>
       <AnimateLayout as="div" dimension="width" itemAnchor="end" className="h-full" transitionClassName="h-full" hideOverflow initial={{ opacity: 0, x: 12 }} enter={{ opacity: 1, x: 0, duration: 200, delay: 40 }} exit={{ opacity: 0, x: 12, duration: 140 }} layoutEnter={{ duration: 240 }} layoutExit={{ duration: 200 }} layoutMove={{ duration: 240 }}>

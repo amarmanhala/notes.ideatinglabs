@@ -14,7 +14,8 @@ type Props = {
   taskGutter?: boolean
 }
 export function SessionTimestamps({ editor, sessions, text, day, taskGutter = false }: Props) {
-  const labels = useSessionPositions(editor, sessions, text, day, true)
+  const hasText = text.trim().length > 0
+  const labels = useSessionPositions(editor, sessions, text, day, hasText)
   const [now, setNow] = useState(Date.now)
   useEffect(() => {
     const update = () => setNow(Date.now())
@@ -25,6 +26,8 @@ export function SessionTimestamps({ editor, sessions, text, day, taskGutter = fa
       window.removeEventListener('focus', update)
     }
   }, [])
+  // Keep session history for Undo, but never show it beside an empty note.
+  if (!hasText) return null
   const rows = groupTimelineLabels(labels)
   return <aside className="relative h-full w-24 overflow-hidden text-xs text-primary" aria-label="Writing timeline">
     {rows.map(({ sessions: rowSessions, top, height }) => {

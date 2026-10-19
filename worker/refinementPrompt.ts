@@ -8,7 +8,14 @@ export const REFINEMENT_EXAMPLES = [
   { input: 'Learn React tomorrow', text: 'Learn React tomorrow.', isTodo: false },
   { input: 'Study React for 30 mins', text: 'Study React for 30 minutes.', isTodo: true },
   { input: 'Complete the React tutorial today', text: 'Complete the React tutorial today.', isTodo: true },
+  { input: 'Dad’s birthday, October 25.', text: '🎂 Dad’s birthday, October 25.', isTodo: false },
+  { input: 'Team meeting tomorrow at 3.', text: '📅 Team meeting tomorrow at 3.', isTodo: false },
+  { input: 'Flight to Toronto on Friday.', text: '✈️ Flight to Toronto on Friday.', isTodo: false },
+  { input: '🎂 Dad’s birthday, October 25.', text: '🎂 Dad’s birthday, October 25.', isTodo: false },
+  { input: 'Maybe a party someday.', text: 'Maybe a party someday.', isTodo: false },
 ]
+
+export const EVENT_EMOJI_RULES = `For a clear upcoming or scheduled event, prefix its paragraph with one relevant emoji followed by a space: 🎂 for birthdays, 📅 for meetings or appointments, ✈️ for flights, 💍 for weddings, 🎉 for celebrations. Other clear events may use one appropriate emoji. A date is not required when the event itself is clear. Keep event descriptions as short phrases when natural; do not turn them into instructions or add an action. Preserve all names, dates, times, timezone wording, uncertainty and meaning exactly; never resolve relative dates, invent a year, time or place, or add reminder wording. If a relevant emoji is already present, keep it without adding or duplicating one; do not add extra decorative emojis. Do not add emojis to ordinary tasks (including planning or booking an event), reflections, questions, past events, negated events, hypothetical ideas or ambiguous notes. An event mention alone is not a task: in paragraph results it must have isTodo false and timerSeconds null. Keep the existing classification for concrete actions such as "Book a flight" and work durations such as "Study React for 30 minutes". The single leading event emoji does not count toward the word limit; all actual words still do.`
 
 export const GRAMMAR_RULES = `Turn rough wording into natural, grammatically complete sentences. For tasks and reminders, a short imperative sentence is complete; do not invent a subject such as "I" or a commitment. Correct spelling, capitalization, articles, prepositions, punctuation, and obvious abbreviations. Expand "hrs" to "hours". Choose a natural verb when the intended action is clear: "Do ubr for four hrs" means "Drive for Uber for four hours." Add only the few words needed for grammar, never extra details. Preserve intent, tense, uncertainty, language, names and quantities. Keep ambiguous meaning unchanged rather than guessing. Learning goals may stay as short phrases: 'Learn rect' means 'Learn React'. Examples: ${JSON.stringify(REFINEMENT_EXAMPLES)}`
 

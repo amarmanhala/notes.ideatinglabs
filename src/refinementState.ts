@@ -1,4 +1,5 @@
 import { MAX_TIMER_SECONDS } from './taskTimer.ts'
+import { refinementWordCount } from './refinementWordCount.ts'
 import { parseLearningResources, type LearningResource } from './learningResources.ts'
 
 export type Paragraph = { id: string; start: number; end: number; text: string }
@@ -57,7 +58,7 @@ export function validateParagraphResults(value: unknown, requested: { id: string
   const found = new Set<string>()
   const result = value.map(item => {
     const original = requested.find(p => p.id === item?.id)
-    if (!original || found.has(item.id) || typeof item.text !== 'string' || !item.text.trim() || /[\r\n]/u.test(item.text) || item.text.length > 12_000 || item.text.trim().split(/\s+/u).length > Math.min(300, Math.max(12, original.text.trim().split(/\s+/u).length))) throw new Error('Refine returned invalid notes. Your writing is unchanged.')
+    if (!original || found.has(item.id) || typeof item.text !== 'string' || !item.text.trim() || /[\r\n]/u.test(item.text) || item.text.length > 12_000 || refinementWordCount(item.text) > Math.min(300, Math.max(12, refinementWordCount(original.text)))) throw new Error('Refine returned invalid notes. Your writing is unchanged.')
     found.add(item.id)
     if (item.isTodo !== undefined && typeof item.isTodo !== 'boolean') throw new Error('Refine returned invalid task information. Your writing is unchanged.')
     if (item.timerSeconds !== undefined && item.timerSeconds !== null && (!Number.isInteger(item.timerSeconds) || item.timerSeconds <= 0 || item.timerSeconds > MAX_TIMER_SECONDS || item.isTodo !== true)) throw new Error('Refine returned invalid timer information. Your writing is unchanged.')

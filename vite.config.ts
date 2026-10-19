@@ -4,7 +4,8 @@ import { defineConfig, loadEnv } from 'vite'
 import { lookup } from 'node:dns'
 import { Agent } from 'node:https'
 import { isIP } from 'node:net'
-import { refineNote, refineParagraphBatch, RefineError } from './worker/refine.ts'
+import { refineNote, refineParagraphBatch, refinementParagraphCount, RefineError } from './worker/refine.ts'
+import { DailyRefinementLimitError, MemoryRefinementQuota, withRefinementQuota } from './worker/refinementQuota.ts'
 import { createSpeechSession } from './worker/speech.ts'
 import { accountAccess, approvedOwner, AuthError } from './worker/auth.ts'
 import { openaiDiagnostics } from './server/openaiDiagnostics.ts'
@@ -47,6 +48,7 @@ export default defineConfig(({ mode, command }) => {
   plugins: [react(), tailwindcss(), {
     name: 'local-note-refine',
     configureServer(server) {
+      const refinementQuota = new MemoryRefinementQuota()
       server.middlewares.use('/api/auth/access', async (request, response) => {
         response.setHeader('Content-Type', 'application/json')
         response.setHeader('Cache-Control', 'no-store')
@@ -86,10 +88,12 @@ export default defineConfig(({ mode, command }) => {
       server.middlewares.use('/api/refine', async (request, response) => {
         response.setHeader('Content-Type', 'application/json')
         response.setHeader('Cache-Control', 'no-store')
+        const lifecycle = new AbortController()
+        response.on('close', () => lifecycle.abort())
         try {
           if (request.method !== 'POST') throw new RefineError(405, 'Method not allowed')
           if (request.headers.origin && request.headers.origin !== `http://${request.headers.host}`) throw new RefineError(403, 'Origin not allowed')
-          await approvedOwner(request.headers.authorization ?? null, authSettings)
+          const owner = await approvedOwner(request.headers.authorization ?? null, authSettings)
           if (!request.headers['content-type']?.startsWith('application/json')) throw new RefineError(415, 'Expected application/json')
           const chunks: Buffer[] = []
           let size = 0
@@ -101,9 +105,9 @@ export default defineConfig(({ mode, command }) => {
           let body: unknown
           try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')) }
           catch { throw new RefineError(400, 'Invalid JSON') }
+          if (!body || typeof body !== 'object' || !('text' in body || 'paragraphs' in body)) throw new RefineError(400, 'Expected note text or paragraphs')
+          const count = refinementParagraphCount(body)
           const text = body && typeof body === 'object' && 'text' in body ? body.text : undefined
-          const lifecycle = new AbortController()
-          response.on('close', () => lifecycle.abort())
           const key = serverEnv.OPENAI_API_KEY || process.env.OPENAI_API_KEY
           // Vite's existing dev socket reports upstream calls to the requesting tab.
           // Show only the visible response and measured tokens for development.
@@ -126,13 +130,13 @@ export default defineConfig(({ mode, command }) => {
               throw error
             }
           }
-          const refined = body && typeof body === 'object' && 'paragraphs' in body
+          const refined = await withRefinementQuota(refinementQuota, owner, count, lifecycle.signal, async () => 'paragraphs' in body
             ? await refineParagraphBatch(body.paragraphs, key, diagnosticFetch, lifecycle.signal)
-            : await refineNote(text, key, diagnosticFetch)
+            : await refineNote(text, key, diagnosticFetch, lifecycle.signal))
           response.end(JSON.stringify(refined))
         } catch (error) {
           response.statusCode = error instanceof RefineError || error instanceof AuthError ? error.status : 500
-          response.end(JSON.stringify({ error: error instanceof RefineError || error instanceof AuthError ? error.message : 'Unable to refine. Your note is unchanged.' }))
+          response.end(JSON.stringify({ error: error instanceof RefineError || error instanceof AuthError ? error.message : 'Unable to refine. Your note is unchanged.', ...(error instanceof DailyRefinementLimitError ? { code: error.code, resetAt: error.resetAt } : {}) }))
         }
       })
     },

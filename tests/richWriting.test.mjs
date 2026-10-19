@@ -67,6 +67,28 @@ test('Cmd+Z can undo formatting without changing the writing',()=>{
   shortcut(editor,'z')
   assert.deepEqual(fromRichDocument(editor.state.doc),{text:'hello world',formats:[]})
 })
+
+test('event emoji stays plain text, preserves neighboring marks, reloads and is undoable', () => {
+ const event='Dad’s birthday, October 25.'
+ const editor=createEditor(`${event}\nKeep bold`)
+ const start=event.length+1
+ editor.commands.setTextSelection({from:documentPosition(editor.state.doc,start),to:documentPosition(editor.state.doc,start+9)})
+ shortcut(editor,'b')
+ const before=fromRichDocument(editor.state.doc)
+ replaceRefinedParagraphs(editor,[{start:0,end:event.length,text:`🎂 ${event}`,isTodo:false,timerSeconds:null}])
+ const refined=fromRichDocument(editor.state.doc)
+ assert.equal(refined.text,`🎂 ${event}\nKeep bold`)
+ assert.deepEqual(refined.formats,[{start:start+3,end:start+12,marks:['bold']}])
+ assert.equal(refined.tasks?.length??0,0)
+ assert.equal(editor.view.dom.querySelector('[data-todo="true"]'),null)
+ assert.deepEqual(fromRichDocument(schema.nodeFromJSON(toRichDocument(refined.text,refined.formats))),refined)
+ const entry=applyWritingChange(undefined,refined.text,Date.now(),()=> 'event',undefined,refined.formats)
+ const saved=parseHistory(JSON.stringify({'2026-10-19':entry}))['2026-10-19']
+ assert.equal(saved.text,refined.text)
+ assert.deepEqual(saved.formats,refined.formats)
+ editor.commands.undo()
+ assert.deepEqual(fromRichDocument(editor.state.doc),before)
+})
 test('refinement decorations change only pending paragraphs without changing text or marks',()=>{
  const editor=createEditor('Done\nrough note')
  editor.commands.setTextSelection({from:7,to:12})

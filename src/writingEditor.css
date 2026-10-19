@@ -8,6 +8,13 @@
 .writing-editor p {
   position: relative;
 }
+.writing-editor p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  color: var(--color-text-tertiary, #8f8f8f);
+  pointer-events: none;
+}
 .writing-task-checkbox {
   position: absolute;
   left: -28px;
