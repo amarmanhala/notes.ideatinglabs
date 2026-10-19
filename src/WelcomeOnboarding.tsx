@@ -36,9 +36,9 @@ export function WelcomeOnboarding({ userId, profile, storage, onFinish, children
     sync.mark(trimmed)
     setGreetingName(trimmed); setPhase('greeting')
   }
-  return <div className="relative h-full min-h-0 min-w-0 flex-1">
-    <div className="h-full min-h-0" hidden={phase !== 'closed'} inert={phase !== 'closed'}>{children}</div>
-    {phase !== 'closed' && <section ref={surface} aria-label="Welcome" className="pl-10 pr-3 py-1.5 text-xl leading-relaxed text-primary" onKeyDown={event => { if (event.key === 'Escape') finish() }}>
+  return <div className="relative h-full w-full min-h-0 min-w-0 flex-1">
+    <div className="h-full w-full min-h-0" hidden={phase !== 'closed'} inert={phase !== 'closed'}>{children}</div>
+    {phase !== 'closed' && <section ref={surface} aria-label="Welcome" className="px-2 py-1.5 text-left text-xl leading-relaxed text-primary sm:pl-10 sm:pr-3" onKeyDown={event => { if (event.key === 'Escape') finish() }}>
       {phase === 'name' ? <form onSubmit={event => { event.preventDefault(); introduce(name) }}>
         <p>What should we call you?</p>
         <Input className="welcome-name-input mt-3" aria-label="Name" placeholder="Name" autoComplete="given-name" value={name} maxLength={60} size="3xl" pill={false} onChange={event => setName(event.target.value)}

@@ -25,7 +25,7 @@ import { Alert } from '@openai/apps-sdk-ui/components/Alert'
 import { Button } from '@openai/apps-sdk-ui/components/Button'
 import { Tooltip } from '@openai/apps-sdk-ui/components/Tooltip'
 import { useWritingCaret } from './useWritingCaret'
-import { Search, ChevronUp, ChevronDown, Moon, Sun } from '@openai/apps-sdk-ui/components/Icon'
+import { Search, ChevronUp, ChevronDown, Moon, Sun, Chat } from '@openai/apps-sdk-ui/components/Icon'
 import { applyDocumentTheme } from '@openai/apps-sdk-ui/theme'
 import { findTextMatches, moveSearchMatch } from './noteSearch'
 import { AnimateLayout } from '@openai/apps-sdk-ui/components/Transition'
@@ -72,6 +72,7 @@ function WritingPage() {
   const [saveFailed, setSaveFailed] = useState(initial.error)
   const [downloadError, setDownloadError] = useState<string | null>(null)
   const [theme, setTheme] = useState<Theme>(storedTheme)
+  const [feedbackOpen, setFeedbackOpen] = useState(false)
   const [reviewOpen, setReviewOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
@@ -151,8 +152,8 @@ function WritingPage() {
 
 
   return (
-    <main className="flex h-dvh overflow-hidden bg-surface text-primary">
-      <div className={`min-h-0 min-w-0 flex-1 flex-col overflow-hidden ${reviewOpen ? 'hidden md:flex' : 'flex'}`}>
+    <main className="flex h-dvh w-screen overflow-hidden bg-surface text-primary">
+      <div className={`relative min-h-0 min-w-0 flex-1 flex-col overflow-hidden ${reviewOpen ? 'hidden md:flex' : 'flex'}`}>
       <header className="flex min-h-16 shrink-0 flex-wrap content-center items-center justify-between gap-4 px-6">
         <span className="text-sm text-secondary"><span className="text-primary">Today</span> · {formatDay(selectedDay, { month: 'long', day: 'numeric', year: 'numeric' })}</span>
         <div className="ml-auto flex min-w-0 items-center gap-2">
@@ -186,9 +187,9 @@ function WritingPage() {
       {saveFailed && <div className="shrink-0 px-6 pt-4"><Alert color="danger" title="Unable to save" description={initial.error ? 'Saved writing could not be loaded. Existing data has been preserved. New writing will only remain on this page until storage is repaired.' : 'Your changes are on this page, but could not be saved. Keep this page open and copy your writing somewhere safe.'} /></div>}
       {!saveFailed && (cloud.status === 'conflict' || cloud.conflicts.length > 0) && <SyncConflictNotice conflicts={cloud.conflicts} onRetry={cloud.retry} onResolve={cloud.resolve} />}
       <div className="flex min-h-0 flex-1 overflow-hidden">
-      <section className="min-h-0 min-w-0 flex-1 overflow-hidden px-6" aria-label="Writing">
-        <div data-writing-surface className="relative flex h-full min-w-0">
-        <div className="relative h-full min-w-0 flex-1">
+      <section className="min-h-0 min-w-0 w-full flex-1 overflow-hidden px-3 sm:px-6" aria-label="Writing">
+        <div data-writing-surface className="relative flex h-full w-full min-w-0">
+        <div className="relative h-full w-full min-w-0 flex-1">
         <WelcomeOnboarding userId={userId} profile={session!.user.user_metadata} storage={storage} onFinish={() => editor.current?.focus({ preventScroll: true })}>
         <RichWritingEditor key={selectedDay} ref={editor} text={text} formats={entry?.formats ?? NO_FORMATS} hideCaret={!!caret} searchQuery={searchQuery} matches={matches} activeMatch={activeMatch} tasks={entry?.tasks} onChange={(value, formats, editStart, edits, tasks) => write(value, formats, editStart, undefined, edits, tasks)} onDictationInvalidated={() => speech.current?.cancel(false)} onParagraphComplete={paragraph => refinement.complete(paragraph)} refiningParagraphs={refining.pending} />
         </WelcomeOnboarding>
@@ -201,13 +202,18 @@ function WritingPage() {
         <Button data-review-trigger color="primary" size="2xl" pill={false} aria-expanded={false} aria-controls="review-panel" onClick={() => setReviewOpen(true)}>Ask AI</Button>
       </div>}
       {(import.meta.env.VITE_SPEECH_ENABLED === 'true') && <SpeechControl key={selectedDay} ref={speech} editor={editor} onStart={() => refinement.cancel()} onComplete={paragraphs => paragraphs.forEach(paragraph => refinement.complete(paragraph))} />}
-      <div className="shrink-0 px-6 py-2">
-        <FeedbackCard userId={userId} />
+      <div className={`absolute inset-x-3 bottom-12 z-30 sm:inset-x-6 ${feedbackOpen ? 'block' : 'hidden sm:block'}`}>
+        <FeedbackCard userId={userId} onClose={() => setFeedbackOpen(false)} />
       </div>
       <footer className="flex min-h-9 shrink-0 flex-wrap content-center items-center justify-between gap-2 px-6 py-1 text-sm text-secondary">
         <span role="status">{saveFailed ? 'Unable to save' : cloud.status === 'loading' ? 'Connecting…' : cloud.status === 'saving' ? 'Saving to cloud…' : cloud.status === 'saved' ? (entry ? 'Saved to cloud' : 'Ready when you are') : cloud.status === 'conflict' ? 'Local draft · conflict' : cloud.status === 'offline' ? 'Saved locally · offline' : 'Saved locally · cloud unavailable'}</span>
         <div className="flex items-center gap-2">
           {import.meta.env.DEV && <DevApiActivity />}
+          <Tooltip content={feedbackOpen ? 'Close feedback' : 'Send feedback'} compact side="top">
+            <Button className="sm:hidden" color="secondary" variant="ghost" size="sm" uniform pill={false} selected={feedbackOpen} aria-label={feedbackOpen ? 'Close feedback' : 'Send feedback'} aria-expanded={feedbackOpen} aria-controls="feedback-card" onClick={() => setFeedbackOpen(open => !open)}>
+              <Chat />
+            </Button>
+          </Tooltip>
           <Tooltip content={`Use ${theme === 'light' ? 'dark' : 'light'} mode`} compact side="top">
             <Button color="secondary" variant="ghost" size="sm" uniform pill={false} aria-label={`Use ${theme === 'light' ? 'dark' : 'light'} mode`} onClick={() => setTheme(current => current === 'light' ? 'dark' : 'light')}>
               {theme === 'light' ? <Moon /> : <Sun />}

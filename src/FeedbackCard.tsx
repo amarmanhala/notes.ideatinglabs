@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '@openai/apps-sdk-ui/components/Button'
 import { Textarea } from '@openai/apps-sdk-ui/components/Textarea'
+import { X } from '@openai/apps-sdk-ui/components/Icon'
 import { API_BASE, getAccessToken } from './authClient'
 
-export function FeedbackCard({ userId }: { userId: string }) {
+export function FeedbackCard({ userId, onClose }: { userId: string; onClose?: () => void }) {
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState('')
@@ -34,8 +35,10 @@ export function FeedbackCard({ userId }: { userId: string }) {
       if (!controller.signal.aborted) setBusy(false)
     }
   }
-  return <form aria-label="Send feedback" className="ml-auto w-80 max-w-full space-y-2 rounded-xl border border-default bg-surface p-3" onSubmit={event => { event.preventDefault(); void submit() }}>
-        <div><h2 className="text-base font-semibold text-primary">Feedback</h2><p className="mt-1 text-sm text-secondary">What could we make better?</p></div>
+  return <form id="feedback-card" aria-label="Send feedback" className="ml-auto w-80 max-w-full space-y-2 rounded-xl border border-default bg-surface p-3 shadow-lg" onSubmit={event => { event.preventDefault(); void submit() }}>
+        <div className="flex items-start justify-between gap-2"><div><h2 className="text-base font-semibold text-primary">Feedback</h2><p className="mt-1 text-sm text-secondary">What could we make better?</p></div>
+          {onClose && <Button className="sm:hidden" type="button" color="secondary" variant="ghost" size="sm" uniform pill={false} aria-label="Close feedback" onClick={onClose}><X /></Button>}
+        </div>
         <Textarea aria-label="Your feedback" placeholder="Share your thoughts…" rows={2} maxLength={2000} size="lg" value={message} disabled={busy} onChange={event => { setMessage(event.target.value); setStatus('') }} />
         <div className="flex justify-end"><Button type="submit" color="primary" pill={false} size="md" loading={busy} disabled={busy || !message.trim()}>Submit</Button></div>
         {status && <p role="status" className="text-sm text-secondary">{status}</p>}

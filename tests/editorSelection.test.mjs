@@ -30,7 +30,7 @@ async function mount(overrides={}){
  await act(async()=>{root.render(createElement(RichWritingEditor,props));await settle()})
  await act(settle)
 }
-function select(element,start,end){const range=document.createRange();const textNode=[...element.childNodes].find(n=>n.nodeType===Node.TEXT_NODE)??element.firstChild;range.setStart(textNode,start);range.setEnd(textNode,end);const selection=window.getSelection();selection.removeAllRanges();selection.addRange(range);document.dispatchEvent(new Event('selectionchange'))}
+function select(element,start,end){element.closest('[role="textbox"]')?.focus();const range=document.createRange();const textNode=[...element.childNodes].find(n=>n.nodeType===Node.TEXT_NODE)??element.firstChild;range.setStart(textNode,start);range.setEnd(textNode,end);const selection=window.getSelection();selection.removeAllRanges();selection.addRange(range);document.dispatchEvent(new Event('selectionchange'))}
 afterEach(async()=>{if(root)await act(async()=>root.unmount());host?.remove();root=null;window.getSelection().removeAllRanges()})
 after(()=>{dom.window.close();channels.forEach(c=>{c.port1.close();c.port2.close()});globalThis.MessageChannel=NativeMessageChannel})
 
@@ -42,6 +42,10 @@ test('leaving the editor to select ordinary page text never pulls focus back',as
  assert.equal(window.getSelection().toString(),'October 18, 2026')
  assert.notEqual(document.activeElement,input)
  date.remove()
+})
+test('restored writing does not autofocus or jump to the end on mount',async()=>{
+ await mount({text:'First line\nRestored writing'})
+ assert.notEqual(document.activeElement,host.querySelector('[role="textbox"]'))
 })
 test('caret visibility rerenders preserve selected note text without resetting editor options',async t=>{
  await mount()
@@ -62,12 +66,20 @@ test('Enter saves the split before emitting the completed paragraph and leaves t
  const events=[]
  await mount({text:'Do ubr for four hrs',onChange:text=>events.push({text}),onParagraphComplete:paragraph=>events.push({paragraph})})
  const input=host.querySelector('[role="textbox"]')
- await act(async()=>{input.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',bubbles:true,cancelable:true}));await settle()})
+ await act(async()=>{props.ref.current.focus();input.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',bubbles:true,cancelable:true}));await settle()})
  assert.equal(events[0].text,'Do ubr for four hrs\n')
  assert.deepEqual(events[1].paragraph,{id:'p:0',start:0,end:19,text:'Do ubr for four hrs'})
  assert.equal(input.querySelectorAll('p').length,2)
  const anchor=window.getSelection().anchorNode
  assert.equal((anchor.nodeType===Node.ELEMENT_NODE?anchor:anchor.parentElement).closest('p')===input.lastElementChild,true,'caret stays in the new paragraph')
+})
+test('mobile keyboard Done refines through insertParagraph beforeinput',async()=>{
+ const events=[]
+ await mount({text:'Mobile thought',onChange:text=>events.push({text}),onParagraphComplete:paragraph=>events.push({paragraph})})
+ const input=host.querySelector('[role="textbox"]')
+ await act(async()=>{props.ref.current.focus();input.dispatchEvent(new dom.window.InputEvent('beforeinput',{inputType:'insertParagraph',bubbles:true,cancelable:true}));await settle()})
+ assert.equal(events[0].text,'Mobile thought\n')
+ assert.deepEqual(events[1].paragraph,{id:'p:0',start:0,end:14,text:'Mobile thought'})
 })
 test('Shift+Enter inserts a paragraph without refining and composition never submits',async()=>{
  const completed=[]

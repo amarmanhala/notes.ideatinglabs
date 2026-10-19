@@ -7,6 +7,10 @@
 }
 .writing-editor p {
   position: relative;
+  margin: 0;
+}
+.writing-editor p + p {
+  margin-top: 0.375rem;
 }
 .writing-editor p.is-editor-empty:first-child::before {
   content: attr(data-placeholder);

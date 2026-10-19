@@ -1,6 +1,6 @@
 import './writingEditor.css'
 import { beginDictation, previewDictation, finishDictation, dictationKey } from './dictationEditor'
-import { useEffect, useLayoutEffect, useImperativeHandle, useState, type CSSProperties, type Ref } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useImperativeHandle, useRef, useState, type CSSProperties, type Ref } from 'react'
 import { EditorContent, useEditor } from '@tiptap/react'
 import type { EditorOptions } from '@tiptap/core'
 import { writingExtensions } from './writingExtensions'
@@ -26,9 +26,10 @@ const SLASH_MENU_ENABLED = false
 const WRITING_EDITOR_PROPS: EditorOptions['editorProps'] = {
   attributes: {
     role: 'textbox', 'aria-multiline': 'true', 'aria-label': 'Your thoughts',
+    enterkeyhint: 'done',
     spellcheck: 'false', autocorrect: 'off', autocapitalize: 'off',
     'data-gramm': 'false', 'data-gramm_editor': 'false', 'data-enable-grammarly': 'false',
-    class: 'writing-editor h-full overflow-y-auto whitespace-pre-wrap break-words pl-10 pr-3 py-1.5 text-xl leading-relaxed text-primary outline-none [&_p]:m-0',
+    class: 'writing-editor h-full w-full overflow-y-auto whitespace-pre-wrap break-words py-1.5 pl-8 pr-2 text-left text-xl leading-relaxed text-primary outline-none sm:pl-10 sm:pr-3',
     style: 'caret-color: var(--writing-caret-color, var(--blue-400))',
   },
 }
@@ -52,15 +53,19 @@ export function RichWritingEditor({ ref, text, formats, hideCaret, searchQuery, 
   const [extensions] = useState(() => writingExtensions.map(extension => extension.name === 'confirmClearNotes' ? ConfirmClearNotes.configure({ onRequest: setClearRequest }) : extension))
   const [slash, setSlash] = useState<{ left: number; top: number } | null>(null)
   const [insertNotice, setInsertNotice] = useState('')
+  const skipParagraphInput = useRef(false)
   const [initialContent] = useState(() => toRichDocument(text, formats, tasks))
   const editor = useEditor({
     extensions,
     content: initialContent,
-    autofocus: 'end',
+    autofocus: text ? false : 'end',
     injectCSS: false,
     enableInputRules: false,
     enablePasteRules: false,
     editorProps: WRITING_EDITOR_PROPS,
+    onCreate: ({ editor }) => {
+      if (text) editor.commands.setTextSelection(editor.state.doc.content.size - 1)
+    },
     onTransaction: ({ editor }) => { editor.view.dom.dispatchEvent(new Event('writing-layout')) },
     onUpdate: ({ editor, transaction }) => {
       const next = fromRichDocument(editor.state.doc)
@@ -102,14 +107,32 @@ export function RichWritingEditor({ ref, text, formats, hideCaret, searchQuery, 
     })
   }
 
+  const completeCurrentParagraph = useCallback((target: EventTarget | null) => {
+    if (!editor?.isEditable || !onParagraphComplete || editor.view.composing || slash || !editor.view.dom.contains(target as Node)) return false
+    if ((target as Element).closest?.('[data-task-checkbox], [data-task-timer]')) return false
+    const { $from, empty } = editor.state.selection
+    if (!empty || $from.depth !== 1) return false
+    const content = $from.parent.textBetween(0, $from.parentOffset, '', '\ufffc')
+    if (!content.trim()) return false
+    const start = plainOffset(editor.state.doc, $from.start())
+    const paragraph = { id: `p:${start}`, start, end: start + content.length, text: content }
+    return editor.chain().splitBlock().setMeta('refine-enter', paragraph).run()
+  }, [editor, onParagraphComplete, slash])
+
   useEffect(() => {
     if (!editor) return
     const close = () => setSlash(null)
     const element = editor.view.dom
+    const beforeInput = (event: Event) => {
+      const inputEvent = event as InputEvent
+      if (inputEvent.inputType !== 'insertParagraph' || inputEvent.isComposing || skipParagraphInput.current) return
+      if (completeCurrentParagraph(event.target)) event.preventDefault()
+    }
     element.addEventListener('scroll', close)
+    element.addEventListener('beforeinput', beforeInput)
     window.addEventListener('resize', close)
-    return () => { element.removeEventListener('scroll', close); window.removeEventListener('resize', close) }
-  }, [editor])
+    return () => { element.removeEventListener('scroll', close); element.removeEventListener('beforeinput', beforeInput); window.removeEventListener('resize', close) }
+  }, [editor, completeCurrentParagraph])
 
   useImperativeHandle<WritingEditorHandle | null, WritingEditorHandle | null>(ref, () => {
     if (!editor) return null
@@ -152,17 +175,14 @@ export function RichWritingEditor({ ref, text, formats, hideCaret, searchQuery, 
     }
   }, [editor, text, formats, tasks, onDictationInvalidated])
 
-  return <div className="relative h-full min-h-0" style={{ '--writing-caret-color': hideCaret ? 'transparent' : 'var(--blue-400)' } as CSSProperties} onKeyDownCapture={event => {
-    if (editor && !editor.isEditable) return
-    if (!editor || !onParagraphComplete || event.key !== 'Enter' || event.shiftKey || event.altKey || event.ctrlKey || event.metaKey || event.nativeEvent.isComposing || editor.view.composing || slash || !editor.view.dom.contains(event.target as Node)) return
-    if ((event.target as Element).closest('[data-task-checkbox], [data-task-timer]')) return
-    const { $from, empty } = editor.state.selection
-    if (!empty || $from.depth !== 1) return
-    const content = $from.parent.textBetween(0, $from.parentOffset, '', '\ufffc')
-    if (!content.trim()) return
-    const start = plainOffset(editor.state.doc, $from.start())
-    const paragraph = { id: `p:${start}`, start, end: start + content.length, text: content }
-    if (editor.chain().splitBlock().setMeta('refine-enter', paragraph).run()) event.preventDefault()
+  return <div className="relative h-full w-full min-h-0" style={{ '--writing-caret-color': hideCaret ? 'transparent' : 'var(--blue-400)' } as CSSProperties} onKeyDownCapture={event => {
+    if (!editor?.isEditable || event.key !== 'Enter' || event.nativeEvent.isComposing) return
+    if (event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) {
+      skipParagraphInput.current = true
+      requestAnimationFrame(() => { skipParagraphInput.current = false })
+      return
+    }
+    if (completeCurrentParagraph(event.target)) event.preventDefault()
   }}>
     {clearRequest && <ClearNotesDialog onKeep={() => {
       clearRequest.cancel()
@@ -174,7 +194,7 @@ export function RichWritingEditor({ ref, text, formats, hideCaret, searchQuery, 
       requestAnimationFrame(() => { if (editor && !editor.isDestroyed) editor.commands.focus(undefined, { scrollIntoView: false }) })
     }} />}
     <SearchHighlights editor={editor} query={searchQuery} matches={matches} activeMatch={activeMatch} />
-    <EditorContent editor={editor} className="relative h-full min-h-0" />
+    <EditorContent editor={editor} className="relative h-full w-full min-h-0" />
     <TaskCheckboxes editor={editor} tasks={tasks} />
     <TaskTimers editor={editor} tasks={tasks} />
     {SLASH_MENU_ENABLED && slash && <SlashMenu left={slash.left} top={slash.top} onClose={closeSlashMenu} onSelect={option => { setInsertNotice(`${option === 'Photo' ? 'Photo uploads' : 'Voice recording'} aren’t connected yet.`); closeSlashMenu() }} />}
