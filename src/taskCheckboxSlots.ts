@@ -24,6 +24,7 @@ export const TaskCheckboxSlots = Extension.create({
               positions.set(slot, getPos)
               return slot
             }, { side: 1, key: `timer:${position}`, stopEvent: () => true, ignoreSelection: true }))
+            if (paragraph.attrs.timer) return
             widgets.push(Decoration.widget(position + 1, (_view, getPos) => {
               const slot = document.createElement('span')
               slot.className = 'writing-task-checkbox'

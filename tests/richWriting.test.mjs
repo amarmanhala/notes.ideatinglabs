@@ -194,15 +194,18 @@ test('format ranges reject HTML-like marks, out-of-range offsets, and duplicate 
     assert.throws(()=>parseHistory(JSON.stringify({'2026-10-14':{...original,formats}})))
   }
 })
-test('timed refinement creates an idle inline timer, preserves neighboring marks, and is undoable',()=>{
+test('timed refinement starts immediately without a checkbox, preserves neighboring marks, and is undoable',()=>{
  const editor=createEditor('Study React for 30 minutes.\nKeep bold')
  editor.commands.setTextSelection({from:30,to:39});shortcut(editor,'b')
  const original=fromRichDocument(editor.state.doc)
  replaceRefinedParagraphs(editor,[{start:0,end:27,text:'Study React for 30 minutes.',isTodo:true,timerSeconds:1800}])
  const next=fromRichDocument(editor.state.doc)
  assert.equal(next.text,original.text);assert.deepEqual(next.formats,original.formats)
- assert.deepEqual(next.tasks,[{start:0,end:27,checked:false,timer:{durationSeconds:1800,remainingMs:1800000}}])
+ assert.equal(next.tasks[0].timer.durationSeconds,1800)
+ assert.equal(next.tasks[0].timer.remainingMs,1800000)
+ assert.ok(next.tasks[0].timer.endsAt>Date.now())
  assert.equal(editor.view.dom.querySelectorAll('[data-task-timer]').length,1)
+ assert.equal(editor.view.dom.querySelector('[data-task-checkbox]'),null)
  shortcut(editor,'z');assert.deepEqual(fromRichDocument(editor.state.doc),original)
 })
 test('timer survives formatting and surrounding insertions, but edits to the timed sentence remove it',()=>{

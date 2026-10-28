@@ -3,12 +3,13 @@ import { mapRefinedParagraphs, noteParagraphs, pendingParagraphs, validateParagr
 
 type Task = { paragraph: Paragraph; controller?: AbortController }
 type Snapshot = { pending: Paragraph[]; error: string; announcement: string }
+type DirtyParagraph = RefinedParagraph & { baselineText?: string }
 
 // Track the source range, rather than the whole document, while the next note is written.
 export class EnterRefinement {
   private text = ''
   private refined: RefinedParagraph[] = []
-  private dirty: RefinedParagraph[] = []
+  private dirty: DirtyParagraph[] = []
   private tasks: Task[] = []
   private listeners = new Set<() => void>()
   private snapshot: Snapshot = { pending: [], error: '', announcement: '' }
@@ -29,16 +30,25 @@ export class EnterRefinement {
       for (const edit of changes) {
         if (edit.before === edit.after) continue
         const change = changedRange(edit.before, edit.after, edit.editStart)
-        const wasDirty = this.dirty.some(p => p.start <= change.oldEnd && p.end >= change.start)
+        const dirtyBefore = this.dirty.filter(p => p.start <= change.oldEnd && p.end >= change.start)
+        const cleanBefore = this.refined.find(p => p.start <= change.oldEnd && p.end >= change.start)
+        const wasDirty = dirtyBefore.length > 0
+        const baselineText = dirtyBefore.find(p => p.baselineText !== undefined)?.baselineText
+          ?? (cleanBefore ? edit.before.slice(cleanBefore.start, cleanBefore.end) : undefined)
         const onlyLineBreaks = /^[\r\n]*$/.test(edit.before.slice(change.start, change.oldEnd)) && /^[\r\n]*$/.test(edit.after.slice(change.start, change.newEnd))
-        this.dirty = mapRefinedParagraphs(edit.before, edit.after, this.dirty, change)
+        this.dirty = mapRefinedParagraphs(edit.before, edit.after, this.dirty, change) as DirtyParagraph[]
         // Loading notes and inserting blank lines are not new writing. Splitting
         // a draft that has already been edited keeps its resulting pieces dirty.
+        // If an edit is undone or retyped back to the refined text, it is clean
+        // again and Enter must not spend another refinement request on it.
         if (userEdit && (!onlyLineBreaks || wasDirty)) {
           const affected = noteParagraphs(edit.after).filter(p => onlyLineBreaks || change.newEnd === change.start
             ? p.start <= change.newEnd && p.end >= change.start
             : p.start < change.newEnd && p.end > change.start)
-          for (const p of affected) if (!this.dirty.some(d => d.start === p.start)) this.dirty.push({ start: p.start, end: p.end, resources: [] })
+          for (const p of affected) {
+            if (baselineText !== undefined && p.text === baselineText) continue
+            if (!this.dirty.some(d => d.start === p.start)) this.dirty.push({ start: p.start, end: p.end, resources: [], ...(baselineText !== undefined ? { baselineText } : {}) })
+          }
         }
       }
       let cancelled = false

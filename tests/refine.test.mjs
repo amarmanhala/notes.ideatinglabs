@@ -53,6 +53,25 @@ test('grammar rules include the Uber case and add only words needed for a natura
  assert.deepEqual(result.paragraphs,[{id:'uber',text:'Drive for Uber for four hours.',resources:[],isTodo:true}])
 })
 
+test('factual questions receive a separate optional answer while personal questions do not',async()=>{
+ const input=[{id:'fact',text:'Who is first PM of Canada?'},{id:'personal',text:'Why am I tired?'}]
+ const result=await refineParagraphBatch(input,'test-only',async(_url,init)=>{
+   const body=JSON.parse(init.body)
+   const item=body.text.format.schema.properties.paragraphs.items
+   assert.deepEqual(item.properties.answer,{type:['string','null'],maxLength:2000})
+   assert.ok(item.required.includes('answer'))
+   assert.match(body.instructions,/non-personal informational question/)
+   assert.match(body.instructions,/Sir John A\. Macdonald/)
+   assert.match(body.instructions,/personal, reflective/)
+   return completedBatch([
+    {id:'fact',text:'Who was the first prime minister of Canada?',isTodo:false,timerSeconds:null,answer:'Sir John A. Macdonald.'},
+    {id:'personal',text:'Why am I tired?',isTodo:false,timerSeconds:null,answer:null},
+   ])
+ })
+ assert.equal(result.paragraphs[0].answer,'Sir John A. Macdonald.')
+ assert.equal(result.paragraphs[1].answer,undefined)
+})
+
 test('both refinement paths add event emoji guidance without another request or changing the response schema', async () => {
   const cases = [
     ['Dad’s birthday, October 25.', '🎂 Dad’s birthday, October 25.', false, null],
@@ -67,6 +86,7 @@ test('both refinement paths add event emoji guidance without another request or 
     ['I felt happy yesterday.', 'I felt happy yesterday.', false, null],
     ['Buy milk.', 'Buy milk.', true, null],
     ['Study React for 30 minutes.', 'Study React for 30 minutes.', true, 1800],
+    ['Set timer for 20 mins', 'Set a timer for 20 minutes.', true, 1200],
   ]
   let calls = 0
   const fetcher = async (_url, init) => {
@@ -88,6 +108,17 @@ test('both refinement paths add event emoji guidance without another request or 
   const single = await refineNote(cases[0][0], 'test-only', fetcher)
   assert.equal(calls, 2)
   assert.equal(single.text, cases[0][1])
+})
+
+test('a direct timer request becomes a persisted twenty-minute timer in one refinement',async()=>{
+ const result=await refineParagraphBatch([{id:'timer',text:'Set timer for 20 mins'}],'test-only',async(_url,init)=>{
+   const body=JSON.parse(init.body)
+   assert.match(body.instructions,/direct request to set a timer/)
+   assert.match(body.instructions,/timerSeconds 1200/)
+   // Direct timer commands are deterministic even if the model misses them.
+   return completedBatch([{id:'timer',text:'Set a timer for 20 minutes.',isTodo:false,timerSeconds:null,answer:null}])
+ })
+ assert.deepEqual(result.paragraphs,[{id:'timer',text:'Set a timer for 20 minutes.',resources:[],isTodo:true,timerSeconds:1200}])
 })
 
 test('a leading event emoji is exempt from the existing word limit in single-note and batch validation', async () => {
@@ -156,6 +187,24 @@ test('learning notes are corrected without searching or adding resources', async
     assert.equal(batch ? result.paragraphs[0].text : result.text, 'Learn React')
     assert.equal(result.resourceNotice, undefined)
   }
+})
+
+test('Learn js receives the vetted official JavaScript resource without model-generated links',async()=>{
+ const result=await refineParagraphBatch([{id:'js',text:'Learn js'}],'key',async(_url,init)=>{
+   const body=JSON.parse(init.body)
+   assert.equal(body.tools,undefined)
+   return completedBatch([{id:'js',text:'Learn JavaScript',isTodo:false,timerSeconds:null,answer:null}])
+ })
+ assert.deepEqual(result.paragraphs,[{
+  id:'js',text:'Learn JavaScript',isTodo:false,timerSeconds:null,resources:[{title:'MDN JavaScript Guide',url:'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide'}],
+ }])
+})
+test('Learn HTML receives the vetted MDN HTML learning module',async()=>{
+ const result=await refineParagraphBatch([{id:'html',text:'Learn HTML'}],'key',async()=>completedBatch([{id:'html',text:'Learn HTML',isTodo:false,timerSeconds:null,answer:null}]))
+ assert.deepEqual(result.paragraphs[0].resources,[{
+  title:'MDN: Structuring content with HTML',
+  url:'https://developer.mozilla.org/en-US/docs/Learn_web_development/Core/Structuring_content',
+ }])
 })
 
 test('learning links survive saved history and formatting but clear when note text changes', () => {

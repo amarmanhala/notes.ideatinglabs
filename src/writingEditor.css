@@ -107,3 +107,59 @@
 .writing-task-timer .task-timer-countdown {
   margin-inline: 0.15em;
 }
+.writing-answer {
+  display: inline;
+  margin-left: 0.5em;
+  line-height: 1.4;
+  user-select: none;
+  -webkit-text-fill-color: initial;
+}
+.writing-answer-toggle {
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-secondary, #737373);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.writing-answer-toggle:hover {
+  color: var(--color-text-primary, #171717);
+}
+.writing-answer-toggle:focus-visible {
+  border-radius: 0.25rem;
+  outline: 2px solid var(--blue-400, #0285ff);
+  outline-offset: 2px;
+}
+.writing-resource {
+  display: inline-flex;
+  margin-left: 0.35em;
+  vertical-align: -0.12em;
+  user-select: none;
+  -webkit-text-fill-color: initial;
+}
+.writing-resource-link {
+  display: inline-flex;
+  width: 20px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid currentColor;
+  border-radius: 9999px;
+  background: var(--blue-a50, rgba(2, 133, 255, 0.08));
+  color: var(--blue-400, #0285ff);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 1;
+  text-decoration: none;
+}
+.writing-resource-link:hover {
+  background: var(--blue-a100, rgba(2, 133, 255, 0.14));
+}
+.writing-resource-link:focus-visible {
+  outline: 2px solid var(--blue-400, #0285ff);
+  outline-offset: 2px;
+}

@@ -97,3 +97,10 @@
   font-size: 20px;
   line-height: 1.625;
 }
+
+/* iOS Safari zooms the viewport when a focused form control is below 16px. */
+@media (max-width: 575px) {
+  #note-search {
+    font-size: 16px;
+  }
+}

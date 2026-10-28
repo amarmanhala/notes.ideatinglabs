@@ -12,16 +12,24 @@ import type { TextMatch } from './noteSearch'
 import { SlashMenu } from './SlashMenu'
 import { isSlashCommand } from './slashCommands'
 import { refinementDecorationKey, replaceRefinedParagraphs } from './refinementEditor'
-import type { Paragraph, RefinementEdit } from './refinementState'
+import type { Paragraph, RefinedParagraph, RefinementEdit } from './refinementState'
 import type { TaskParagraph } from './taskParagraphs'
 import { TaskTimers } from './TaskTimers'
 import { TaskCheckboxes } from './TaskCheckboxes'
 import { ClearNotesDialog } from './ClearNotesDialog'
 import { ConfirmClearNotes, type ClearNotesRequest } from './confirmClearNotes'
+import { answerDecorationKey } from './answerSlots'
+import { resourceDecorationKey } from './resourceSlots'
 
 const NO_REFINING: Paragraph[] = []
+const NO_ANSWERS: RefinedParagraph[] = []
 const NO_TASKS: TaskParagraph[] = []
 const SLASH_MENU_ENABLED = false
+const LOCAL_ECHO_LIMIT = 50
+
+function documentSignature(text: string, formats: TextFormat[], tasks: TaskParagraph[]) {
+  return JSON.stringify([text, formats, tasks])
+}
 // Stable view options let native selections survive React caret updates.
 const WRITING_EDITOR_PROPS: EditorOptions['editorProps'] = {
   attributes: {
@@ -43,17 +51,23 @@ type Props = {
   matches: TextMatch[]
   activeMatch: number
   refiningParagraphs?: Paragraph[]
+  answerParagraphs?: RefinedParagraph[]
+  resourceParagraphs?: RefinedParagraph[]
   tasks?: TaskParagraph[]
   onDictationInvalidated?: () => void
   onParagraphComplete?: (paragraph: Paragraph) => void
   onChange: (text: string, formats: TextFormat[], editStart?: number, edits?: RefinementEdit[], tasks?: TaskParagraph[]) => void
 }
-export function RichWritingEditor({ ref, text, formats, hideCaret, searchQuery, matches, activeMatch, onChange, onParagraphComplete, onDictationInvalidated, refiningParagraphs = NO_REFINING, tasks = NO_TASKS }: Props) {
+export function RichWritingEditor({ ref, text, formats, hideCaret, searchQuery, matches, activeMatch, onChange, onParagraphComplete, onDictationInvalidated, refiningParagraphs = NO_REFINING, answerParagraphs = NO_ANSWERS, resourceParagraphs = NO_ANSWERS, tasks = NO_TASKS }: Props) {
   const [clearRequest, setClearRequest] = useState<ClearNotesRequest | null>(null)
   const [extensions] = useState(() => writingExtensions.map(extension => extension.name === 'confirmClearNotes' ? ConfirmClearNotes.configure({ onRequest: setClearRequest }) : extension))
   const [slash, setSlash] = useState<{ left: number; top: number } | null>(null)
   const [insertNotice, setInsertNotice] = useState('')
   const skipParagraphInput = useRef(false)
+  // React can render an earlier onChange value after ProseMirror has already
+  // accepted more keystrokes. Keep those local echoes from replacing the newer
+  // document and moving its selection backwards during fast typing.
+  const localEchoes = useRef<string[]>([])
   const [initialContent] = useState(() => toRichDocument(text, formats, tasks))
   const editor = useEditor({
     extensions,
@@ -69,6 +83,11 @@ export function RichWritingEditor({ ref, text, formats, hideCaret, searchQuery, 
     onTransaction: ({ editor }) => { editor.view.dom.dispatchEvent(new Event('writing-layout')) },
     onUpdate: ({ editor, transaction }) => {
       const next = fromRichDocument(editor.state.doc)
+      const signature = documentSignature(next.text, next.formats, next.tasks ?? NO_TASKS)
+      if (localEchoes.current.at(-1) !== signature) {
+        localEchoes.current.push(signature)
+        if (localEchoes.current.length > LOCAL_ECHO_LIMIT) localEchoes.current.shift()
+      }
       let editStart: number | undefined
       transaction.steps[0]?.getMap().forEach(from => { editStart ??= plainOffset(transaction.before, from) })
       const edits: RefinementEdit[] = transaction.steps.map((step, index) => {
@@ -97,6 +116,16 @@ export function RichWritingEditor({ ref, text, formats, hideCaret, searchQuery, 
     editor.view.dispatch(editor.state.tr.setMeta(refinementDecorationKey, refiningParagraphs).setMeta('addToHistory', false))
     editor.view.dom.setAttribute('aria-busy', String(refiningParagraphs.length > 0 || !!dictationKey.getState(editor.state)))
   }, [editor, refiningParagraphs])
+
+  useLayoutEffect(() => {
+    if (!editor || editor.isDestroyed) return
+    editor.view.dispatch(editor.state.tr.setMeta(answerDecorationKey, answerParagraphs).setMeta('addToHistory', false))
+  }, [editor, answerParagraphs])
+
+  useLayoutEffect(() => {
+    if (!editor || editor.isDestroyed) return
+    editor.view.dispatch(editor.state.tr.setMeta(resourceDecorationKey, resourceParagraphs).setMeta('addToHistory', false))
+  }, [editor, resourceParagraphs])
 
   function closeSlashMenu() {
     setSlash(null)
@@ -161,18 +190,28 @@ export function RichWritingEditor({ ref, text, formats, hideCaret, searchQuery, 
   useEffect(() => {
     if (!editor) return
     const current = fromRichDocument(editor.state.doc)
-    if (current.text !== text || JSON.stringify(current.formats) !== JSON.stringify(formats) || JSON.stringify(current.tasks ?? []) !== JSON.stringify(tasks)) {
-      if (dictationKey.getState(editor.state)) {
-        // A replacement from another device must never receive a stale dictation insertion.
-        onDictationInvalidated?.()
-      }
-      const selection = editor.state.selection
-      const scroll = editor.view.dom.scrollTop
-      editor.commands.setContent(toRichDocument(text, formats, tasks), { emitUpdate: false })
-      const limit = editor.state.doc.content.size - 1
-      editor.commands.setTextSelection({ from: Math.min(selection.from, limit), to: Math.min(selection.to, limit) })
-      editor.view.dom.scrollTo({ top: scroll })
+    const incomingSignature = documentSignature(text, formats, tasks)
+    const currentSignature = documentSignature(current.text, current.formats, current.tasks ?? NO_TASKS)
+    const echoIndex = localEchoes.current.indexOf(incomingSignature)
+    if (incomingSignature === currentSignature) {
+      if (echoIndex >= 0) localEchoes.current.splice(0, echoIndex + 1)
+      return
     }
+    if (echoIndex >= 0) {
+      localEchoes.current.splice(0, echoIndex + 1)
+      return
+    }
+    localEchoes.current.length = 0
+    if (dictationKey.getState(editor.state)) {
+      // A replacement from another device must never receive a stale dictation insertion.
+      onDictationInvalidated?.()
+    }
+    const selection = editor.state.selection
+    const scroll = editor.view.dom.scrollTop
+    editor.commands.setContent(toRichDocument(text, formats, tasks), { emitUpdate: false })
+    const limit = editor.state.doc.content.size - 1
+    editor.commands.setTextSelection({ from: Math.min(selection.from, limit), to: Math.min(selection.to, limit) })
+    editor.view.dom.scrollTo({ top: scroll })
   }, [editor, text, formats, tasks, onDictationInvalidated])
 
   return <div className="relative h-full w-full min-h-0" style={{ '--writing-caret-color': hideCaret ? 'transparent' : 'var(--blue-400)' } as CSSProperties} onKeyDownCapture={event => {

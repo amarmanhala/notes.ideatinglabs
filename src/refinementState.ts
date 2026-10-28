@@ -1,10 +1,11 @@
 import { MAX_TIMER_SECONDS } from './taskTimer.ts'
 import { refinementWordCount } from './refinementWordCount.ts'
 import { parseLearningResources, type LearningResource } from './learningResources.ts'
+import { officialLearningResources } from './officialLearningResources.ts'
 
 export type Paragraph = { id: string; start: number; end: number; text: string }
-export type RefinedParagraph = { start: number; end: number; resources: LearningResource[] }
-export type ParagraphResult = { id: string; text: string; resources: LearningResource[]; isTodo?: boolean; timerSeconds?: number | null }
+export type RefinedParagraph = { start: number; end: number; resources: LearningResource[]; answer?: string }
+export type ParagraphResult = { id: string; text: string; resources: LearningResource[]; isTodo?: boolean; timerSeconds?: number | null; answer?: string }
 export type ParagraphBatch = { paragraphs: ParagraphResult[]; resourceNotice?: string }
 export type Replacement = { start: number; end: number; text: string; isTodo?: boolean; timerSeconds?: number | null }
 export type RefinementEdit = { before: string; after: string; editStart?: number }
@@ -26,7 +27,10 @@ export function parseRefinedParagraphs(value: unknown, text: string): RefinedPar
   return value.map(item => {
     if (!item || !Number.isInteger(item.start) || !Number.isInteger(item.end) || paragraphs.get(item.start) !== item.end || seen.has(item.start)) throw new Error('Invalid refined paragraph range')
     seen.add(item.start)
-    return { start: item.start, end: item.end, resources: parseLearningResources(item.resources) }
+    if (item.answer !== undefined && (typeof item.answer !== 'string' || !item.answer.trim() || item.answer.length > 2000 || /[\r\n]/u.test(item.answer))) throw new Error('Invalid answer')
+    const storedResources = parseLearningResources(item.resources)
+    const resources = storedResources.length ? storedResources : officialLearningResources(text.slice(item.start, item.end))
+    return { start: item.start, end: item.end, resources, ...(item.answer !== undefined ? { answer: item.answer.trim() } : {}) }
   }).sort((a, b) => a.start - b.start)
 }
 
@@ -62,7 +66,8 @@ export function validateParagraphResults(value: unknown, requested: { id: string
     found.add(item.id)
     if (item.isTodo !== undefined && typeof item.isTodo !== 'boolean') throw new Error('Refine returned invalid task information. Your writing is unchanged.')
     if (item.timerSeconds !== undefined && item.timerSeconds !== null && (!Number.isInteger(item.timerSeconds) || item.timerSeconds <= 0 || item.timerSeconds > MAX_TIMER_SECONDS || item.isTodo !== true)) throw new Error('Refine returned invalid timer information. Your writing is unchanged.')
-    return { id: item.id as string, text: item.text.trim(), resources: parseLearningResources(item.resources), ...(item.isTodo !== undefined ? { isTodo: item.isTodo } : {}), ...(item.timerSeconds !== undefined ? { timerSeconds: item.timerSeconds } : {}) }
+    if (item.answer !== undefined && item.answer !== null && (typeof item.answer !== 'string' || !item.answer.trim() || item.answer.length > 2000 || /[\r\n]/u.test(item.answer))) throw new Error('Refine returned an invalid answer. Your writing is unchanged.')
+    return { id: item.id as string, text: item.text.trim(), resources: parseLearningResources(item.resources), ...(item.isTodo !== undefined ? { isTodo: item.isTodo } : {}), ...(item.timerSeconds !== undefined ? { timerSeconds: item.timerSeconds } : {}), ...(typeof item.answer === 'string' ? { answer: item.answer.trim() } : {}) }
   })
   return requested.map(p => result.find(item => item.id === p.id)!)
 }
@@ -83,7 +88,7 @@ export function refinementMetadata(text: string, previous: RefinedParagraph[], r
     const nextLine = result?.text ?? line
     const nextStart = nextText.length
     const done = previous.find(p => p.start === start && p.end === end)
-    if (result || done) refined.push({ start: nextStart, end: nextStart + nextLine.length, resources: result?.resources ?? done!.resources })
+    if (result || done) refined.push({ start: nextStart, end: nextStart + nextLine.length, resources: result?.resources ?? done!.resources, ...(result?.answer ? { answer: result.answer } : done?.answer ? { answer: done.answer } : {}) })
     if (result && (result.text !== line || result.isTodo !== undefined || result.timerSeconds !== undefined)) replacements.push({ start, end, text: result.text, ...(result.isTodo !== undefined ? { isTodo: result.isTodo } : {}), ...(result.timerSeconds !== undefined ? { timerSeconds: result.timerSeconds } : {}) })
     nextText += nextLine + '\n'
     offset = end + 1

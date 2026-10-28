@@ -5,12 +5,17 @@ import { X } from '@openai/apps-sdk-ui/components/Icon'
 import { API_BASE, getAccessToken } from './authClient'
 
 export function FeedbackCard({ userId, onClose }: { userId: string; onClose?: () => void }) {
+  const dialog = useRef<HTMLDialogElement>(null)
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState('')
   const attempt = useRef<{ id: string; message: string } | null>(null)
   const request = useRef<AbortController | null>(null)
-  useEffect(() => () => request.current?.abort(), [])
+  useEffect(() => {
+    const element = dialog.current
+    if (element && !element.open) element.showModal()
+    return () => request.current?.abort()
+  }, [])
   async function submit() {
     const text = message.trim()
     if (!text || request.current) return
@@ -35,12 +40,16 @@ export function FeedbackCard({ userId, onClose }: { userId: string; onClose?: ()
       if (!controller.signal.aborted) setBusy(false)
     }
   }
-  return <form id="feedback-card" aria-label="Send feedback" className="ml-auto w-80 max-w-full space-y-2 rounded-xl border border-default bg-surface p-3 shadow-lg" onSubmit={event => { event.preventDefault(); void submit() }}>
-        <div className="flex items-start justify-between gap-2"><div><h2 className="text-base font-semibold text-primary">Feedback</h2><p className="mt-1 text-sm text-secondary">What could we make better?</p></div>
-          {onClose && <Button className="sm:hidden" type="button" color="secondary" variant="ghost" size="sm" uniform pill={false} aria-label="Close feedback" onClick={onClose}><X /></Button>}
+  return <dialog ref={dialog} id="feedback-dialog" aria-labelledby="feedback-title" aria-describedby="feedback-description" onClose={onClose}
+    onClick={event => { if (event.target === event.currentTarget) { const bounds = event.currentTarget.getBoundingClientRect(); if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) event.currentTarget.close() } }}
+    className="fixed inset-0 m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-md overflow-y-auto rounded-2xl border-0 bg-surface p-6 text-primary shadow-2xl backdrop:bg-black/40 sm:p-8">
+    <form aria-label="Send feedback" className="space-y-3" onSubmit={event => { event.preventDefault(); void submit() }}>
+        <div className="flex items-start justify-between gap-2"><div><h2 id="feedback-title" className="text-xl font-semibold text-primary">Feedback</h2><p id="feedback-description" className="mt-1 text-sm text-secondary">What could we make better?</p></div>
+          <Button type="button" color="secondary" variant="ghost" size="sm" uniform pill={false} aria-label="Close feedback" onClick={() => dialog.current?.close()}><X /></Button>
         </div>
         <Textarea aria-label="Your feedback" placeholder="Share your thoughts…" rows={2} maxLength={2000} size="lg" value={message} disabled={busy} onChange={event => { setMessage(event.target.value); setStatus('') }} />
         <div className="flex justify-end"><Button type="submit" color="primary" pill={false} size="md" loading={busy} disabled={busy || !message.trim()}>Submit</Button></div>
         {status && <p role="status" className="text-sm text-secondary">{status}</p>}
       </form>
+    </dialog>
 }

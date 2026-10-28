@@ -48,8 +48,9 @@ export function parseHistory(raw: string): History {
       }
     }
     const formats = parseFormats(entry.formats, entry.text)
-    const resources = parseLearningResources(entry.learningResources)
     const refined = parseRefinedParagraphs(entry.refinedParagraphs, entry.text)
+    const storedResources = parseLearningResources(entry.learningResources)
+    const resources = storedResources.length ? storedResources : paragraphResources(refined)
     const tasks = parseTasks(entry.tasks, entry.text)
     history[day] = { text: entry.text, createdAt: entry.createdAt, updatedAt: entry.updatedAt, sessions, ...(formats.length ? { formats } : {}), ...(resources.length ? { learningResources: resources } : {}), ...(refined.length ? { refinedParagraphs: refined } : {}), ...(entry.tasks !== undefined ? { tasks } : {}) }
   }

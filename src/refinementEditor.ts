@@ -4,6 +4,7 @@ import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { closeHistory } from '@tiptap/pm/history'
 import { documentPosition, fromRichDocument } from './richDocument'
 import type { Replacement, RefinementEdit } from './refinementState'
+import { startTimer } from './taskTimer'
 
 export const refinementDecorationKey = new PluginKey<DecorationSet>('refinement-thinking')
 export const RefinementDecorations = Extension.create({
@@ -42,7 +43,9 @@ export function replaceRefinedParagraphs(editor: Editor, replacements: Replaceme
         const todo = replacement.isTodo ?? paragraph.attrs.todo
         const duration = replacement.timerSeconds
         const timer = !todo || duration === null ? null : duration !== undefined
-          ? (paragraph.attrs.timer?.durationSeconds === duration ? paragraph.attrs.timer : { durationSeconds: duration, remainingMs: duration * 1000 })
+          ? (paragraph.attrs.timer?.durationSeconds === duration && paragraph.attrs.timer.endsAt !== undefined
+              ? paragraph.attrs.timer
+              : startTimer({ durationSeconds: duration, remainingMs: duration * 1000 }))
           : paragraph.attrs.timer
         transaction.setNodeMarkup(from - 1, undefined, { ...paragraph.attrs, todo, checked: todo && paragraph.attrs.todo ? paragraph.attrs.checked : false, timer, timerSet: !!timer || paragraph.attrs.timerSet, timerText: timer ? replacement.text : null })
       }

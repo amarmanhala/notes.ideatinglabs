@@ -9,6 +9,8 @@ import { Placeholder, UndoRedo } from '@tiptap/extensions'
 import { RefinementDecorations } from './refinementEditor'
 import { TaskCheckboxSlots } from './taskCheckboxSlots'
 import { ConfirmClearNotes } from './confirmClearNotes'
+import { AnswerSlots } from './answerSlots'
+import { ResourceSlots } from './resourceSlots'
 
 const SelectedBold = Bold.extend({
   addKeyboardShortcuts() {
@@ -33,4 +35,4 @@ const WritingParagraph = Paragraph.extend({
   addKeyboardShortcuts() { return { 'Shift-Enter': () => this.editor.commands.splitBlock() } },
 })
 
-export const writingExtensions = [Document, WritingParagraph, Text, SelectedBold, SelectedItalic, UndoRedo, Placeholder.configure({ placeholder: 'Write a thought. Press Enter. See magic.', showOnlyCurrent: false }), ConfirmClearNotes, RefinementDecorations, TaskCheckboxSlots, DictationPreview, TaskTimerTextChanges]
+export const writingExtensions = [Document, WritingParagraph, Text, SelectedBold, SelectedItalic, UndoRedo, Placeholder.configure({ placeholder: 'Write a thought. Press Enter. See magic.', showOnlyCurrent: false }), ConfirmClearNotes, RefinementDecorations, TaskCheckboxSlots, AnswerSlots, ResourceSlots, DictationPreview, TaskTimerTextChanges]

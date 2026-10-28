@@ -62,6 +62,29 @@ test('caret visibility rerenders preserve selected note text without resetting e
  assert.equal(host.querySelector('[style*="--writing-caret-color"]').style.getPropertyValue('--writing-caret-color'),'transparent')
 })
 
+test('a delayed local save echo cannot replace newer rapid input or move its caret backwards',async()=>{
+ const changes=[]
+ await mount({text:'f',onChange:text=>changes.push(text)})
+ const input=host.querySelector('[role="textbox"]'),paragraph=input.querySelector('p')
+ await act(async()=>{
+  input.focus()
+  paragraph.firstChild.nodeValue='fo'
+  select(paragraph,2,2)
+  input.dispatchEvent(new dom.window.InputEvent('input',{inputType:'insertText',data:'o',bubbles:true}))
+  await settle()
+  paragraph.firstChild.nodeValue='for'
+  select(paragraph,3,3)
+  input.dispatchEvent(new dom.window.InputEvent('input',{inputType:'insertText',data:'r',bubbles:true}))
+  await settle()
+ })
+ assert.deepEqual(changes.slice(-2),['fo','for'])
+ props={...props,text:'fo'}
+ await act(async()=>{root.render(createElement(RichWritingEditor,props));await settle()})
+ assert.equal(input.textContent,'for')
+ assert.equal(window.getSelection().isCollapsed,true)
+ assert.equal(window.getSelection().anchorOffset,3)
+})
+
 test('Enter saves the split before emitting the completed paragraph and leaves the caret on the next line',async()=>{
  const events=[]
  await mount({text:'Do ubr for four hrs',onChange:text=>events.push({text}),onParagraphComplete:paragraph=>events.push({paragraph})})
@@ -97,6 +120,38 @@ test('Enter in the middle refines only the preceding text and leaves the rest on
  await act(async()=>{select(input.querySelector('p'),5,5);await settle();input.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));await settle()})
  assert.equal(completed.length,1);assert.equal(completed[0].text,'first')
  assert.equal(input.lastElementChild.textContent,' rest')
+})
+test('a factual answer is secondary UI that toggles without changing note text',async()=>{
+ const changes=[]
+ const text='Who was the first PM of Canada?'
+ await mount({text,answerParagraphs:[{start:0,end:text.length,resources:[],answer:'Sir John A. Macdonald.'}],onChange:value=>changes.push(value)})
+ const input=host.querySelector('[role="textbox"]')
+ const toggle=[...host.querySelectorAll('button')].find(button=>button.textContent==='Show answer')
+ assert.ok(toggle)
+ assert.equal(input.querySelector('p').firstChild.textContent,text)
+ await act(async()=>{toggle.click();await settle()})
+ assert.equal(toggle.textContent,'Sir John A. Macdonald.')
+ assert.equal(toggle.getAttribute('aria-expanded'),'true')
+ await act(async()=>{toggle.click();await settle()})
+ assert.equal(toggle.textContent,'Show answer')
+ assert.equal(input.querySelector('p').firstChild.textContent,text)
+ assert.deepEqual(changes,[])
+})
+test('a learning resource is an inline circular link and never enters note text',async()=>{
+ const changes=[]
+ const text='Learn JavaScript'
+ const resource={title:'MDN JavaScript Guide',url:'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide'}
+ await mount({text,resourceParagraphs:[{start:0,end:text.length,resources:[resource]}],onChange:value=>changes.push(value)})
+ const input=host.querySelector('[role="textbox"]')
+ const link=host.querySelector('[aria-label="Open official resource: MDN JavaScript Guide"]')
+ assert.ok(link)
+ assert.equal(link.href,resource.url)
+ assert.equal(link.target,'_blank')
+ assert.equal(link.rel,'noopener noreferrer')
+ assert.equal(link.textContent,'i')
+ assert.equal(link.closest('p'),input.querySelector('p'))
+ assert.equal(input.querySelector('p').firstChild.textContent,text)
+ assert.deepEqual(changes,[])
 })
 test('UI library task checkbox changes only completion metadata and supports undo',async t=>{
  t.mock.method(dom.window.HTMLElement.prototype,'getBoundingClientRect',()=>({...rect,right:800,bottom:600,width:800,height:600}))
@@ -208,6 +263,7 @@ test('inline timer buttons start and pause without entering the countdown into s
  await mount({text,tasks:[{start:0,end:text.length,checked:false,timer:{durationSeconds:1800,remainingMs:1800000}}],onChange:(text,_f,_s,_e,tasks)=>changes.push({text,tasks})})
  let start=host.querySelector('[aria-label="Start timer: 30:00"]')
  assert.ok(start)
+ assert.equal(host.querySelector('[data-task-checkbox]'),null)
  await act(async()=>{start.click();await settle()})
  assert.equal(changes.at(-1).text,text)
  assert.ok(changes.at(-1).tasks[0].timer.endsAt)
@@ -219,14 +275,8 @@ test('inline timer buttons start and pause without entering the countdown into s
  await act(async()=>{pause.click();await settle()})
  assert.equal(changes.at(-1).tasks[0].timer.endsAt,undefined)
  assert.equal(changes.at(-1).text,text)
- const checkbox=host.querySelector('[role="checkbox"]')
- await act(async()=>{checkbox.click();await settle()})
- assert.equal(changes.at(-1).tasks[0].checked,true)
- assert.equal(host.querySelector('[data-task-timer]'),null,'completed task hides the timer')
- await act(async()=>{host.querySelector('[role="checkbox"]').click();await settle()})
- assert.equal(changes.at(-1).tasks[0].checked,false)
- assert.ok(host.querySelector('[data-task-timer]'),'unchecking restores the paused timer')
- assert.equal(changes.at(-1).tasks[0].timer.endsAt,undefined)
+ assert.equal(host.querySelector('[role="checkbox"]'),null)
+ assert.ok(host.querySelector('[data-task-timer]'),'pausing keeps the timer available')
 })
 
 test('the library deletion dialog keeps notes on cancel and clears only after its destructive action',async t=>{

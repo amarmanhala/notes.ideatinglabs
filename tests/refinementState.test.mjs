@@ -43,6 +43,29 @@ test('formatting and reload preserve processed paragraphs and resources',()=>{
  assert.equal(pendingParagraphs(restored.text,restored.refinedParagraphs).length,0)
  for(const refinedParagraphs of [[{start:1,end:11}], [{start:0,end:11},{start:0,end:11}]])assert.throws(()=>parseHistory(JSON.stringify({'2026-10-18':{...before,refinedParagraphs}})))
 })
+test('answers persist with refined questions and disappear when the question changes',()=>{
+ const question='Who was the first PM of Canada?'
+ const paragraph=noteParagraphs(question)[0]
+ const next=refinementMetadata(question,[],[paragraph],[{id:paragraph.id,text:question,resources:[],answer:'Sir John A. Macdonald.'}])
+ assert.equal(next.refinedParagraphs[0].answer,'Sir John A. Macdonald.')
+ const entry={...make(question),refinedParagraphs:next.refinedParagraphs}
+ const restored=parseHistory(JSON.stringify({'2026-10-18':entry}))['2026-10-18']
+ assert.equal(restored.refinedParagraphs[0].answer,'Sir John A. Macdonald.')
+ assert.equal(edit(restored,'Who was Canada’s first prime minister?').refinedParagraphs,undefined)
+})
+test('older refined JavaScript learning notes gain the vetted resource on reload',()=>{
+ const text='Learn JavaScript'
+ const legacy={...make(text),refinedParagraphs:[{start:0,end:text.length,resources:[]}]}
+ const restored=parseHistory(JSON.stringify({'2026-10-18':legacy}))['2026-10-18']
+ assert.deepEqual(restored.refinedParagraphs[0].resources,[{title:'MDN JavaScript Guide',url:'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide'}])
+ assert.deepEqual(restored.learningResources,restored.refinedParagraphs[0].resources)
+})
+test('refined HTML learning notes gain the vetted HTML module on reload',()=>{
+ const text='Learn HTML'
+ const legacy={...make(text),refinedParagraphs:[{start:0,end:text.length,resources:[]}]}
+ const restored=parseHistory(JSON.stringify({'2026-10-18':legacy}))['2026-10-18']
+ assert.deepEqual(restored.refinedParagraphs[0].resources,[{title:'MDN: Structuring content with HTML',url:'https://developer.mozilla.org/en-US/docs/Learn_web_development/Core/Structuring_content'}])
+})
 test('batch merging keeps line breaks and unchanged metadata; identical outputs still count as refined',()=>{
  const text='rough\n\nAlready clear\nother rough'
  const all=noteParagraphs(text)

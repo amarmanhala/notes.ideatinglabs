@@ -48,3 +48,14 @@ test('refinement validates durations and passes them to the replacement transact
  assert.throws(()=>validateParagraphResults([{...result,isTodo:false}],[p]))
  assert.equal(validateParagraphResults([{...result,isTodo:false,timerSeconds:null}],[p])[0].timerSeconds,null)
 })
+test('a direct twenty-minute timer result is saved as timer metadata',()=>{
+ const source='Set timer for 20 mins'
+ const refined='Set a timer for 20 minutes.'
+ const p={id:'timer',start:0,end:source.length,text:source}
+ const result={id:'timer',text:refined,resources:[],isTodo:true,timerSeconds:1200}
+ const replacement=refinementMetadata(source,[],[p],[result]).replacements[0]
+ assert.deepEqual(replacement,{start:0,end:source.length,text:refined,isTodo:true,timerSeconds:1200})
+ const saved=applyWritingChange(undefined,refined,now,()=> 'timer',undefined,[],undefined,[{start:0,end:refined.length,checked:false,timer:{durationSeconds:1200,remainingMs:1200000}}])
+ assert.equal(parseHistory(JSON.stringify({[day]:saved}))[day].tasks[0].timer.durationSeconds,1200)
+ assert.equal(formatTimer(1200000),'20:00')
+})

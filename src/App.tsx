@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { Navigate, Route, Routes, useParams, useLocation } from 'react-router'
+import { Navigate, Route, Routes, useParams, useLocation, useNavigate } from 'react-router'
 import { SpeechControl, type SpeechControlHandle } from './SpeechControl'
 import { RichWritingEditor } from './RichWritingEditor'
 import { HomePage } from './HomePage'
@@ -7,7 +7,7 @@ import { EnterRefinement } from './enterRefinement'
 import { requestRefinement } from './requestRefinement'
 import { DevApiActivity } from './DevApiActivity'
 import { SyncConflictNotice } from './SyncConflictNotice'
-import { paragraphResources, refinementMetadata, type RefinedParagraph, type RefinementEdit } from './refinementState'
+import { noteParagraphs, paragraphResources, refinementMetadata, type RefinedParagraph, type RefinementEdit } from './refinementState'
 import { AuthCallback, RequireApproved, SetPassword } from './AuthPages'
 import { useAuth } from './authContext'
 import { accountStorage } from './accountStorage'
@@ -25,15 +25,20 @@ import { Alert } from '@openai/apps-sdk-ui/components/Alert'
 import { Button } from '@openai/apps-sdk-ui/components/Button'
 import { Tooltip } from '@openai/apps-sdk-ui/components/Tooltip'
 import { useWritingCaret } from './useWritingCaret'
-import { Search, ChevronUp, ChevronDown, Moon, Sun, Chat } from '@openai/apps-sdk-ui/components/Icon'
+import { Search, ChevronUp, ChevronDown, Moon, Sun } from '@openai/apps-sdk-ui/components/Icon'
 import { applyDocumentTheme } from '@openai/apps-sdk-ui/theme'
 import { findTextMatches, moveSearchMatch } from './noteSearch'
 import { AnimateLayout } from '@openai/apps-sdk-ui/components/Transition'
 import { useCloudNotes } from './useCloudNotes'
 import { applyWritingChange, parseHistory, STORAGE_KEY, type History } from './writingSessions'
+import { SegmentedControl } from '@openai/apps-sdk-ui/components/SegmentedControl'
+import { CalendarView } from './CalendarView'
+import { calendarViewLabel, type CalendarViewMode } from './calendarViews'
+import { officialLearningResources } from './officialLearningResources'
 
 const NO_FORMATS: TextFormat[] = []
 const THEME_KEY = 'notes.theme'
+const CALENDAR_VIEWS_ENABLED = false
 type Theme = 'light' | 'dark'
 
 function storedTheme(): Theme {
@@ -57,6 +62,7 @@ function formatDay(key: string, options: Intl.DateTimeFormatOptions) {
 
 function WritingPage() {
   const { session } = useAuth()
+  const navigate = useNavigate()
   const userId = session!.user.id
   const storage = useMemo(() => accountStorage(localStorage, userId), [userId])
   const { date } = useParams()
@@ -74,6 +80,7 @@ function WritingPage() {
   const [theme, setTheme] = useState<Theme>(storedTheme)
   const [feedbackOpen, setFeedbackOpen] = useState(false)
   const [reviewOpen, setReviewOpen] = useState(false)
+  const [view, setView] = useState<CalendarViewMode>('current')
   const [searchQuery, setSearchQuery] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
   const searchInput = useRef<HTMLInputElement>(null)
@@ -84,6 +91,10 @@ function WritingPage() {
   const text = entry?.text || ''
   const matches = useMemo(() => findTextMatches(text, searchQuery), [text, searchQuery])
   const activeMatch = Math.min(matchIndex, Math.max(0, matches.length - 1))
+  const resourceParagraphs = useMemo(() => noteParagraphs(text).flatMap(paragraph => {
+    const resources = officialLearningResources(paragraph.text)
+    return resources.length ? [{ start: paragraph.start, end: paragraph.end, resources }] : []
+  }), [text])
   const caret = useWritingCaret(editor, text, selectedDay)
 
   useLayoutEffect(() => {
@@ -148,21 +159,27 @@ function WritingPage() {
   }
 
 
-  if (date && (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(`${date}T12:00:00`)) || dayKey(new Date(`${date}T12:00:00`)) !== date || date > today)) return <Navigate to="/today" replace />
+  if (date && (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(`${date}T12:00:00`)) || dayKey(new Date(`${date}T12:00:00`)) !== date)) return <Navigate to="/today" replace />
 
 
   return (
     <main className="flex h-dvh w-screen overflow-hidden bg-surface text-primary">
       <div className={`relative min-h-0 min-w-0 flex-1 flex-col overflow-hidden ${reviewOpen ? 'hidden md:flex' : 'flex'}`}>
-      <header className={`flex min-h-16 shrink-0 content-center items-center justify-between ${searchOpen ? 'flex-nowrap gap-0 px-3 sm:gap-4 sm:px-6' : 'flex-wrap gap-4 px-6'}`}>
-        <span className={`text-sm text-secondary ${searchOpen ? 'hidden sm:inline' : ''}`}><span className="text-primary">Today</span> · {formatDay(selectedDay, { month: 'long', day: 'numeric', year: 'numeric' })}</span>
+      <header className={`flex min-h-16 shrink-0 content-center items-center justify-between py-2 ${searchOpen ? 'flex-nowrap gap-0 px-3 sm:gap-4 sm:px-6' : 'flex-wrap gap-2 px-3 sm:gap-4 sm:px-6'}`}>
+        <span className={`text-sm text-secondary ${searchOpen ? 'hidden sm:inline' : ''}`}><span className="text-primary">{view === 'current' ? (selectedDay === today ? 'Today' : 'Day') : view[0].toUpperCase() + view.slice(1)}</span> · {calendarViewLabel(view, selectedDay)}</span>
         <div className={`${searchOpen ? 'ml-0 w-full sm:ml-auto sm:w-auto' : 'ml-auto'} flex min-w-0 items-center gap-2`}>
-          {text.trim() && <div className={searchOpen ? 'hidden sm:block' : ''}><DownloadNote text={text} formats={entry?.formats ?? NO_FORMATS} day={selectedDay} onError={setDownloadError} /></div>}
+          {view === 'current' && text.trim() && <div className={searchOpen ? 'hidden sm:block' : ''}><DownloadNote text={text} formats={entry?.formats ?? NO_FORMATS} day={selectedDay} onError={setDownloadError} /></div>}
           {refining.error && <span role="status" className={`max-w-64 text-xs text-secondary ${searchOpen ? 'hidden sm:inline' : ''}`}>{refining.error}</span>}
           <span className="sr-only" role="status" aria-live="polite">{refining.announcement}</span>
+          {CALENDAR_VIEWS_ENABLED && !searchOpen && <SegmentedControl value={view} onChange={next => { setView(next); setReviewOpen(false) }} aria-label="Notes view" size="sm" pill={false}>
+            <SegmentedControl.Option value="current">Current</SegmentedControl.Option>
+            <SegmentedControl.Option value="week">Week</SegmentedControl.Option>
+            <SegmentedControl.Option value="month">Month</SegmentedControl.Option>
+            <SegmentedControl.Option value="year">Year</SegmentedControl.Option>
+          </SegmentedControl>}
           <div data-search-field className={`flex min-w-0 items-center ${searchOpen ? 'flex-1 sm:flex-none' : ''}`}>
             {!searchOpen ? <Tooltip content={<>Search notes <kbd className="ml-2 opacity-70">{searchShortcut}</kbd></>} compact side="bottom">
-              <Button color="secondary" variant="ghost" size="sm" uniform pill={false} aria-label="Search notes" aria-keyshortcuts="Meta+K Control+K" aria-expanded={false} aria-controls="note-search" onClick={() => setSearchOpen(true)}><Search /></Button>
+              <Button color="secondary" variant="ghost" size="sm" uniform pill={false} aria-label="Search notes" aria-keyshortcuts="Meta+K Control+K" aria-expanded={false} aria-controls="note-search" onClick={() => { setView('current'); setSearchOpen(true) }}><Search /></Button>
             </Tooltip> : <>
             <div className="min-w-0 flex-1 sm:w-56 sm:flex-none">
             <Input ref={searchInput} id="note-search" type="search" size="lg" aria-label="Search notes" placeholder="Search notes" startAdornment={<Search />} value={searchQuery} onChange={event => { setSearchQuery(event.target.value); setMatchIndex(0) }} onKeyDown={event => {
@@ -186,34 +203,30 @@ function WritingPage() {
       {downloadError && <div className="shrink-0 px-6 pt-4"><Alert color="danger" title="Unable to download" description={downloadError} /></div>}
       {saveFailed && <div className="shrink-0 px-6 pt-4"><Alert color="danger" title="Unable to save" description={initial.error ? 'Saved writing could not be loaded. Existing data has been preserved. New writing will only remain on this page until storage is repaired.' : 'Your changes are on this page, but could not be saved. Keep this page open and copy your writing somewhere safe.'} /></div>}
       {!saveFailed && (cloud.status === 'conflict' || cloud.conflicts.length > 0) && <SyncConflictNotice conflicts={cloud.conflicts} onRetry={cloud.retry} onResolve={cloud.resolve} />}
-      <div className="flex min-h-0 flex-1 overflow-hidden">
+      {view === 'current' ? <div className="flex min-h-0 flex-1 overflow-hidden">
       <section className="min-h-0 min-w-0 w-full flex-1 overflow-hidden px-3 sm:px-6" aria-label="Writing">
         <div data-writing-surface className="relative flex h-full w-full min-w-0">
         <div className="relative h-full w-full min-w-0 flex-1">
         <WelcomeOnboarding userId={userId} profile={session!.user.user_metadata} storage={storage} onFinish={() => editor.current?.focus({ preventScroll: true })}>
-        <RichWritingEditor key={selectedDay} ref={editor} text={text} formats={entry?.formats ?? NO_FORMATS} hideCaret={!!caret} searchQuery={searchQuery} matches={matches} activeMatch={activeMatch} tasks={entry?.tasks} onChange={(value, formats, editStart, edits, tasks) => write(value, formats, editStart, undefined, edits, tasks)} onDictationInvalidated={() => speech.current?.cancel(false)} onParagraphComplete={paragraph => refinement.complete(paragraph)} refiningParagraphs={refining.pending} />
+        <RichWritingEditor key={selectedDay} ref={editor} text={text} formats={entry?.formats ?? NO_FORMATS} hideCaret={!!caret} searchQuery={searchQuery} matches={matches} activeMatch={activeMatch} tasks={entry?.tasks} answerParagraphs={entry?.refinedParagraphs} resourceParagraphs={resourceParagraphs} onChange={(value, formats, editStart, edits, tasks) => write(value, formats, editStart, undefined, edits, tasks)} onDictationInvalidated={() => speech.current?.cancel(false)} onParagraphComplete={paragraph => refinement.complete(paragraph)} refiningParagraphs={refining.pending} />
         </WelcomeOnboarding>
         {caret && <span aria-hidden="true" className="pointer-events-none absolute w-0.5 bg-[var(--blue-400)] animate-writing-caret" style={{ left: caret.left, top: caret.top, height: caret.height }} />}
         </div>
         </div>
       </section>
-      </div>
+      </div> : <div className="min-h-0 flex-1 overflow-hidden bg-surface-secondary" aria-label={`${view[0].toUpperCase() + view.slice(1)} notes view`}>
+        <CalendarView mode={view} anchor={selectedDay} today={today} history={history} onOpen={day => { setView('current'); navigate(day === today ? '/today' : `/day/${day}`) }} />
+      </div>}
       {!reviewOpen && <div hidden className="shrink-0 justify-end px-6 py-2">
         <Button data-review-trigger color="primary" size="2xl" pill={false} aria-expanded={false} aria-controls="review-panel" onClick={() => setReviewOpen(true)}>Ask AI</Button>
       </div>}
-      {(import.meta.env.VITE_SPEECH_ENABLED === 'true') && <SpeechControl key={selectedDay} ref={speech} editor={editor} onStart={() => refinement.cancel()} onComplete={paragraphs => paragraphs.forEach(paragraph => refinement.complete(paragraph))} />}
-      <div className={`absolute inset-x-3 bottom-12 z-30 sm:inset-x-6 ${feedbackOpen ? 'block' : 'hidden sm:block'}`}>
-        <FeedbackCard userId={userId} onClose={() => setFeedbackOpen(false)} />
-      </div>
+      {view === 'current' && (import.meta.env.VITE_SPEECH_ENABLED === 'true') && <SpeechControl key={selectedDay} ref={speech} editor={editor} onStart={() => refinement.cancel()} onComplete={paragraphs => paragraphs.forEach(paragraph => refinement.complete(paragraph))} />}
+      {feedbackOpen && <FeedbackCard userId={userId} onClose={() => setFeedbackOpen(false)} />}
       <footer className="flex min-h-9 shrink-0 flex-wrap content-center items-center justify-between gap-2 px-6 py-1 text-sm text-secondary">
         <span role="status">{saveFailed ? 'Unable to save' : cloud.status === 'loading' ? 'Connecting…' : cloud.status === 'saving' ? 'Saving to cloud…' : cloud.status === 'saved' ? (entry ? 'Saved to cloud' : 'Ready when you are') : cloud.status === 'conflict' ? 'Local draft · conflict' : cloud.status === 'offline' ? 'Saved locally · offline' : 'Saved locally · cloud unavailable'}</span>
         <div className="flex items-center gap-2">
           {import.meta.env.DEV && <DevApiActivity />}
-          <Tooltip content={feedbackOpen ? 'Close feedback' : 'Send feedback'} compact side="top">
-            <Button className="sm:hidden" color="secondary" variant="ghost" size="sm" uniform pill={false} selected={feedbackOpen} aria-label={feedbackOpen ? 'Close feedback' : 'Send feedback'} aria-expanded={feedbackOpen} aria-controls="feedback-card" onClick={() => setFeedbackOpen(open => !open)}>
-              <Chat />
-            </Button>
-          </Tooltip>
+          <Button color="secondary" variant="ghost" size="sm" pill={false} aria-haspopup="dialog" aria-expanded={feedbackOpen} aria-controls="feedback-dialog" onClick={() => setFeedbackOpen(true)}>Feedback</Button>
           <Tooltip content={`Use ${theme === 'light' ? 'dark' : 'light'} mode`} compact side="top">
             <Button color="secondary" variant="ghost" size="sm" uniform pill={false} aria-label={`Use ${theme === 'light' ? 'dark' : 'light'} mode`} onClick={() => setTheme(current => current === 'light' ? 'dark' : 'light')}>
               {theme === 'light' ? <Moon /> : <Sun />}

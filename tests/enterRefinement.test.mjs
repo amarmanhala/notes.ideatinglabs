@@ -96,6 +96,18 @@ test('editing an existing note makes only that paragraph eligible on the next En
  queue.complete(second);assert.equal(calls.length,0)
  queue.complete(first);await settle();assert.equal(calls.length,1);assert.equal(calls[0].text,'First!')
 })
+test('restoring a refined paragraph to its original text does not request it again',()=>{
+ const calls=[]
+ const queue=new EnterRefinement(async p=>{calls.push(p);return {paragraphs:[]}},'today')
+ const refined=[{start:0,end:10,resources:[]}]
+ queue.update('Have oats.',refined)
+ queue.update('Have oats',[],[{before:'Have oats.',after:'Have oats',editStart:9}],true)
+ queue.update('Have oats.',[],[{before:'Have oats',after:'Have oats.',editStart:9}],true)
+ queue.update('Have oats.\n',[],[{before:'Have oats.',after:'Have oats.\n',editStart:10}],true)
+ queue.complete(noteParagraphs('Have oats.\n')[0])
+ assert.equal(calls.length,0)
+ assert.deepEqual(queue.getSnapshot().pending,[])
+})
 test('splitting a dirty paragraph keeps the completed prefix eligible',async()=>{
  const {queue,calls}=fixture('rough unfinished')
  queue.update('rough\n unfinished',[],[{before:'rough unfinished',after:'rough\n unfinished',editStart:5}],true)
